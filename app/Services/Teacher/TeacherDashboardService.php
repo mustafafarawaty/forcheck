@@ -47,7 +47,7 @@ class TeacherDashboardService
 
                 $minutes = $now->diffInMinutes($session->scheduled_at, false);
 
-                return $minutes >= 0 && $minutes <= 60;
+                return $minutes >= 0 && $minutes <= 600;
             })
             ->sortBy('scheduled_at')
             ->first();

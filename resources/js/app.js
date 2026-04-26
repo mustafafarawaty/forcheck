@@ -23,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTeacherChart();
     initializeStudentChart();
     initializePhoneInputs();
-    initializeSessionCountdown();
     initializeBookingModeForms();
     initializeTeacherSlotPicker();
     (runtime.initializeTeacherSessionPanel || initializeTeacherSessionPanel)();
@@ -326,34 +325,6 @@ function extractErrorMessage(error, fallback) {
     }
 
     return error?.response?.data?.message || fallback;
-}
-
-function initializeSessionCountdown() {
-    const countdown = document.querySelector('[data-session-countdown]');
-
-    if (!countdown || !countdown.dataset.targetAt) {
-        return;
-    }
-
-    const render = () => {
-        const target = new Date(countdown.dataset.targetAt);
-        const diff = target.getTime() - Date.now();
-
-        if (diff <= 0) {
-            countdown.textContent = '00:00:00';
-            return;
-        }
-
-        const totalSeconds = Math.floor(diff / 1000);
-        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-        const seconds = String(totalSeconds % 60).padStart(2, '0');
-
-        countdown.textContent = `${hours}:${minutes}:${seconds}`;
-    };
-
-    render();
-    window.setInterval(render, 1000);
 }
 
 function initializeTeacherChart() {
@@ -808,7 +779,7 @@ function initializeTeacherLivePolling() {
         })
             .then(response => response.json())
             .then(render)
-            .catch(() => {});
+            .catch(() => { });
     };
 
     poll();
@@ -1567,13 +1538,13 @@ function initializeLiveSessionRoom() {
 
     window.setInterval(renderTimer, 1000);
     window.setInterval(() => {
-        pollState().catch(() => {});
+        pollState().catch(() => { });
     }, 2500);
 
-    renderState(roomState).catch(() => {});
+    renderState(roomState).catch(() => { });
 
     if (roomState?.session?.can_join_now) {
-        joinRoom().catch(() => {});
+        joinRoom().catch(() => { });
     } else {
         updateOverlay('سيتم تفعيل الانضمام بمجرد حلول موعد الجلسة وتأكيد الطرفين للحضور.');
     }

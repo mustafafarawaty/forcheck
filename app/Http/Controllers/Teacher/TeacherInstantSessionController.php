@@ -42,9 +42,9 @@ class TeacherInstantSessionController extends Controller
     public function accept(Request $request, int $liveRequestId): RedirectResponse
     {
         $teacher = $this->authenticatedTeacher($request);
-        $this->instantSessionService->accept($teacher, $liveRequestId);
+        $session = $this->instantSessionService->accept($teacher, $liveRequestId);
 
-        return back()->with('status', 'تم قبول طلب الجلسة المباشرة.');
+        return redirect()->route('teacher.sessions.room.show', ['sessionId' => $session->id, 'autojoin' => 1]);
     }
 
     /**

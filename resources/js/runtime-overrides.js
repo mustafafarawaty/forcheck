@@ -14,21 +14,26 @@ function safeJsonParse(value, fallback = {}) {
 
 function sessionEndTimestamp(payload) {
     const explicitEnd = payload?.planned_end_at_iso || payload?.planned_end_at;
-    const durationHours = Number(payload?.duration_hours || 1);
+    let durationHours = Number(payload?.duration_hours || 1);
+
+    durationHours = Math.min(durationHours, 2); // ✅ fix
 
     if (explicitEnd) {
-        const explicitEndTimestamp = new Date(explicitEnd).getTime();
+        let end = String(explicitEnd).trim();
+        if (!end.includes('T')) end = end.replace(' ', 'T');
 
-        return Number.isNaN(explicitEndTimestamp) ? null : explicitEndTimestamp;
+        const ts = new Date(end).getTime();
+        return Number.isNaN(ts) ? null : ts;
     }
 
     const base = payload?.started_at_iso || payload?.scheduled_at_iso || payload?.started_at || payload?.scheduled_at;
 
-    if (!base) {
-        return null;
-    }
+    if (!base) return null;
 
-    return new Date(base).getTime() + (durationHours * 60 * 60 * 1000);
+    let start = String(base).trim();
+    if (!start.includes('T')) start = start.replace(' ', 'T');
+
+    return new Date(start).getTime() + (durationHours * 60 * 60 * 1000);
 }
 
 function payloadCanJoinNow(payload) {
@@ -59,14 +64,6 @@ function payloadCanJoinNow(payload) {
 
     if (Number.isNaN(scheduledAt) || now < scheduledAt) {
         return false;
-    }
-
-    if (!payload.started_at_iso && !payload.started_at && payload.join_deadline_at_iso) {
-        const joinDeadline = new Date(payload.join_deadline_at_iso).getTime();
-
-        if (!Number.isNaN(joinDeadline) && now >= joinDeadline) {
-            return false;
-        }
     }
 
     const endAt = sessionEndTimestamp(payload);
@@ -548,11 +545,11 @@ function initializeTeacherLivePolling() {
         })
             .then(response => response.json())
             .then(render)
-            .catch(() => {});
+            .catch(() => { });
     };
 
     poll();
-    window.setInterval(poll, 20000);
+    window.setInterval(poll, 5000);
 }
 
 function initializeTeacherRealtime() {
@@ -574,7 +571,7 @@ function initializeTeacherRealtime() {
         return;
     }
 
-    const renderLiveRequests = indicator._renderLiveRequests || (() => {});
+    const renderLiveRequests = indicator._renderLiveRequests || (() => { });
 
     window.Echo.channel(indicator.dataset.realtimeChannel)
         .listen('.teacher.realtime.updated', event => {
@@ -703,7 +700,13 @@ function initializeLiveSessionRoom() {
     let mediaRecorder = null;
     let recordingChunks = [];
     let notesTimer = null;
+    const isMobile = () => window.innerWidth < 768;
 
+    root.classList.toggle('is-mobile', isMobile());
+
+    window.addEventListener('resize', () => {
+        root.classList.toggle('is-mobile', isMobile());
+    });
     const remoteVideo = root.querySelector('[data-remote-video]');
     const localVideo = root.querySelector('[data-local-video]');
     const overlay = root.querySelector('[data-room-video-overlay]');
@@ -713,6 +716,7 @@ function initializeLiveSessionRoom() {
     const joinButtons = root.querySelectorAll('[data-join-now]');
     const cameraButton = root.querySelector('[data-toggle-camera]');
     const micButton = root.querySelector('[data-toggle-mic]');
+    const fullscreenButton = root.querySelector('[data-fullscreen-toggle]');
     const endingSoon = root.querySelector('[data-room-ending-soon]');
     const chatList = root.querySelector('[data-room-chat-list]');
     const chatForm = root.querySelector('[data-room-chat-form]');
@@ -729,6 +733,11 @@ function initializeLiveSessionRoom() {
     const endConfirmMessage = document.querySelector('[data-room-end-confirm-message]');
     const endConfirmSubmit = document.querySelector('[data-room-end-confirm-submit]');
     const endModal = endConfirmModalElement ? bootstrap.Modal.getOrCreateInstance(endConfirmModalElement) : null;
+
+    if (isMobile()) {
+        if (cameraButton) cameraButton.disabled = true;
+        if (micButton) micButton.disabled = true;
+    }
 
     if (remoteVideo) {
         remoteVideo.srcObject = remoteStream;
@@ -826,15 +835,27 @@ function initializeLiveSessionRoom() {
     };
 
     const setRoomFormsEnabled = enabled => {
-        [chatForm, fileForm, complaintForm].forEach(form => {
-            if (!form) {
-                return;
-            }
+        if (joined || enabled) {
+            [chatForm, fileForm, complaintForm].forEach(form => {
+                if (!form) {
+                    return;
+                }
 
-            form.querySelectorAll('input, textarea, button').forEach(element => {
-                element.disabled = !enabled;
+                form.querySelectorAll('input, textarea, button').forEach(element => {
+                    element.disabled = false;
+                });
             });
-        });
+        } else {
+            [chatForm, fileForm, complaintForm].forEach(form => {
+                if (!form) {
+                    return;
+                }
+
+                form.querySelectorAll('input, textarea, button').forEach(element => {
+                    element.disabled = true;
+                });
+            });
+        }
     };
 
     const mergeCollectionItem = (items, payload, prepend = false) => {
@@ -931,7 +952,7 @@ function initializeLiveSessionRoom() {
                 }
             });
 
-            remoteVideo?.play().catch(() => {});
+            remoteVideo?.play().catch(() => { });
             updateOverlay('');
             startRecordingIfPossible();
         };
@@ -945,32 +966,46 @@ function initializeLiveSessionRoom() {
         return peerConnection;
     };
 
-    const ensureLocalMedia = async () => {
-        if (localStream) {
-            return localStream;
+    const getMediaDevices = () => {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            return navigator.mediaDevices;
         }
 
-        if (!navigator.mediaDevices?.getUserMedia) {
-            throw new Error('هذا المتصفح لا يدعم الوصول إلى الكاميرا أو الميكروفون.');
+        const legacy = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+        if (legacy) {
+            return {
+                getUserMedia: (constraints) =>
+                    new Promise((resolve, reject) => {
+                        legacy.call(navigator, constraints, resolve, reject);
+                    }),
+            };
+        }
+
+        return null;
+    };
+
+    const ensureLocalMedia = async () => {
+        if (localStream) return localStream;
+
+        const mediaDevices = getMediaDevices();
+
+        if (!mediaDevices) {
+            throw new Error('المتصفح لا يدعم الكاميرا أو الميكروفون أو يجب تشغيل HTTPS.');
         }
 
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            localStream = await mediaDevices.getUserMedia({
+                video: { width: 640, height: 480 },
+                audio: true
+            });
         } catch (error) {
-            if (error?.name === 'NotAllowedError') {
-                throw new Error('تم رفض الوصول إلى الكاميرا أو الميكروفون. اسمح بالوصول ثم أعد المحاولة.');
-            }
-
-            if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
-                throw new Error('لا توجد كاميرا أو ميكروفون متاحان على هذا الجهاز، لذلك لن يكتمل الانضمام للجلسة المباشرة.');
-            }
-
-            throw new Error('تعذر تشغيل الكاميرا أو الميكروفون على هذا الجهاز حاليًا.');
+            throw new Error('تم رفض إذن الكاميرا أو الميكروفون.');
         }
 
         if (localVideo) {
             localVideo.srcObject = localStream;
-            localVideo.play().catch(() => {});
+            localVideo.play().catch(() => { });
         }
 
         return localStream;
@@ -1183,6 +1218,12 @@ function initializeLiveSessionRoom() {
             await ensureLocalMedia();
             await window.axios.post(config.joinUrl);
             joined = true;
+
+            if (isMobile()) {
+                if (cameraButton) cameraButton.disabled = false;
+                if (micButton) micButton.disabled = false;
+            }
+
             offerSent = false;
             await ensurePeerConnection();
             await pollState();
@@ -1287,25 +1328,65 @@ function initializeLiveSessionRoom() {
 
     joinButtons.forEach(button => {
         button.addEventListener('click', () => {
-            joinRoom().catch(() => {});
+            joinRoom().catch(() => { });
         });
     });
 
     if (cameraButton) {
-        cameraButton.addEventListener('click', () => {
-            localStream?.getVideoTracks().forEach(track => {
-                track.enabled = !track.enabled;
-                cameraButton.classList.toggle('is-off', !track.enabled);
-            });
+        cameraButton.addEventListener('click', async () => {
+            try {
+                if (!localStream) {
+                    updateOverlay('جاري طلب إذن الكاميرا...');
+                    await ensureLocalMedia();
+                    updateOverlay('');
+                }
+
+                const track = localStream?.getVideoTracks()[0];
+
+                if (track) {
+                    track.enabled = !track.enabled;
+                    cameraButton.classList.toggle('is-off', !track.enabled);
+                }
+            } catch (error) {
+                updateOverlay(extractErrorMessage(error, 'تعذر تشغيل الكاميرا.'));
+            }
         });
     }
 
     if (micButton) {
-        micButton.addEventListener('click', () => {
-            localStream?.getAudioTracks().forEach(track => {
-                track.enabled = !track.enabled;
-                micButton.classList.toggle('is-off', !track.enabled);
-            });
+        micButton.addEventListener('click', async () => {
+            try {
+                if (!localStream) {
+                    updateOverlay('جاري طلب إذن الميكروفون...');
+                    await ensureLocalMedia();
+                    updateOverlay('');
+                }
+
+                const track = localStream?.getAudioTracks()[0];
+
+                if (track) {
+                    track.enabled = !track.enabled;
+                    micButton.classList.toggle('is-off', !track.enabled);
+                }
+            } catch (error) {
+                updateOverlay(extractErrorMessage(error, 'تعذر تشغيل الميكروفون.'));
+            }
+        });
+    }
+
+    if (fullscreenButton) {
+        fullscreenButton.addEventListener('click', () => {
+            const container = root.querySelector('[data-video-container]') || root;
+
+            if (!document.fullscreenElement) {
+                container.requestFullscreen().catch(() => {
+                    updateOverlay('تعذر تفعيل الشاشة الكاملة.');
+                });
+            } else {
+                document.exitFullscreen().catch(() => {
+                    updateOverlay('تعذر إلغاء الشاشة الكاملة.');
+                });
+            }
         });
     }
 
@@ -1393,7 +1474,7 @@ function initializeLiveSessionRoom() {
     teacherNotes?.addEventListener('input', scheduleNotesSave);
     studentNotes?.addEventListener('input', scheduleNotesSave);
     endButton?.addEventListener('click', () => {
-        endSession().catch(() => {});
+        endSession().catch(() => { });
     });
 
     endConfirmSubmit?.addEventListener('click', async () => {
@@ -1404,19 +1485,19 @@ function initializeLiveSessionRoom() {
     if (window.Echo && config.roomChannel) {
         window.Echo.channel(config.roomChannel)
             .listen('.live-session.event', event => {
-                handleRoomEvent(event).catch(() => {});
+                handleRoomEvent(event).catch(() => { });
             });
     }
 
     window.setInterval(renderTimer, 1000);
     window.setInterval(() => {
-        pollState().catch(() => {});
+        pollState().catch(() => { });
     }, 15000);
 
-    renderState(roomState).catch(() => {});
+    renderState(roomState).catch(() => { });
 
     if (autoJoinRequested && currentRoomCanJoin()) {
-        joinRoom().catch(() => {});
+        joinRoom().catch(() => { });
     } else if (currentRoomCanJoin()) {
         updateOverlay('يمكنك الانضمام الآن. اضغط زر الانضمام لبدء الجلسة.');
     } else {
@@ -1428,6 +1509,20 @@ function initializeLiveSessionRoom() {
         peerConnection?.close();
     });
 }
+
+const mobileStyle = document.createElement('style');
+mobileStyle.textContent = `
+    .is-mobile .live-room-controls {
+        flex-direction: column;
+    }
+    .is-mobile .live-room-video {
+        height: 50vh;
+    }
+    .is-mobile .live-room-chat {
+        height: 30vh;
+    }
+`;
+document.head.appendChild(mobileStyle);
 
 window.Ba3eedOverrides = {
     initializeTeacherSessionPanel,

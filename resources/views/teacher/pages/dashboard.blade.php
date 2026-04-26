@@ -24,35 +24,22 @@
             <div class="col-xl-5">
                 <div class="teacher-glass teacher-mobile-card">
                     @if($countdownSession)
-                        <div class="small text-white-50 mb-2">الجلسة الأقرب خلال أقل من ساعة</div>
+                        <div class="small text-white-50 mb-2">الجلسة الأقرب خلال الـ10 ساعات القادمة</div>
                         <div class="fs-4 fw-bold mb-2">{{ $countdownSession->student_name }} - {{ $countdownSession->subject?->name ?? 'جلسة' }}</div>
                         <div class="small text-white-50 mb-3">{{ $countdownSession->scheduled_at?->format('Y-m-d H:i') }}</div>
-                        <div
-                            class="teacher-countdown"
-                            data-session-countdown
-                            data-target-at="{{ $countdownSession->scheduled_at?->toIso8601String() }}"
-                        >
-                            --:--:--
-                        </div>
-                        <a
-                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                            class="btn btn-light mt-3 w-100 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                            data-quick-join-button="teacher"
-                        >
-                            الانضمام الآن
-                        </a>
                     @else
-                        <div class="small text-white-50 mb-2">لا توجد جلسة تبدأ خلال الساعة القادمة</div>
+                        <div class="small text-white-50 mb-2">لا توجد جلسة تبدأ خلال الـ10 ساعات القادمة</div>
                         <div class="fs-5 fw-bold mb-2">يمكنك متابعة المواعيد أو تفعيل استقبال الجلسات المباشرة.</div>
-                        <div class="small text-white-50">سيظهر العدّاد هنا تلقائيًا عند اقتراب أي جلسة.</div>
-                        <a
-                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                            class="btn btn-light mt-3 w-100 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                            data-quick-join-button="teacher"
-                        >
-                            الانضمام الآن
-                        </a>
+                        <div class="small text-white-50">سيظهر أحدث الجلسات هنا تلقائيًا.</div>
                     @endif
+
+                    <a
+                        href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
+                        class="btn btn-light mt-3 w-100 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
+                        data-quick-join-button="teacher"
+                    >
+                        الانضمام الآن
+                    </a>
                 </div>
             </div>
         </div>

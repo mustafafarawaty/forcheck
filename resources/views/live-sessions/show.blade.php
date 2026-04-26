@@ -24,6 +24,123 @@
                 : route('student.sessions.index'),
         ];
     @endphp
+    
+    <style>
+/* 📱 MOBILE ONLY */
+@media (max-width: 768px) {
+
+    /* 1. تحويل layout لعمودي */
+    .live-room-layout {
+        display: flex;
+        flex-direction: column !important;
+        gap: 10px;
+    }
+
+    /* 2. الفيديو */
+    .live-room-video-wrap {
+        width: 100%;
+        height: 220px;
+        position: relative;
+    }
+
+    .live-room-video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* preview تبع الكاميرا */
+    .live-room-local-preview {
+        width: 80px;
+        height: 60px;
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    /* 3. الأزرار */
+    .live-room-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .live-room-control {
+        flex: 1 1 48%;
+        font-size: 13px;
+        padding: 8px;
+    }
+
+    /* زر الإنهاء ياخد عرض كامل */
+    .live-room-control-danger {
+        flex: 1 1 100%;
+    }
+
+    /* 4. الهيدر */
+    .live-room-header {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .live-room-title {
+        font-size: 16px;
+    }
+
+    .live-room-meta {
+        font-size: 12px;
+    }
+
+    /* 5. sidebar → تحت الفيديو */
+    .live-room-sidebar {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    /* 6. panels */
+    .live-room-panel {
+        padding: 10px;
+    }
+
+    .live-room-panel-title {
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+
+    /* 7. الشات */
+    .live-room-chat-list {
+        max-height: 150px;
+        overflow-y: auto;
+    }
+
+    /* 8. input */
+    .live-room-input {
+        font-size: 13px;
+        padding: 6px;
+    }
+
+    .live-room-submit {
+        font-size: 13px;
+        padding: 6px 10px;
+    }
+
+    /* 9. timer */
+    .live-room-timer {
+        font-size: 14px;
+    }
+
+    /* 10. recording text */
+    .live-room-recording-pill span {
+        font-size: 11px;
+    }
+
+}
+</style>
 
     <div class="live-room-shell" data-live-room='@json($roomConfig)'>
         <section class="live-room-header mb-4">
