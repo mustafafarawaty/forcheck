@@ -16,6 +16,13 @@ use App\Http\Controllers\Teacher\TeacherSessionController;
 use App\Http\Controllers\Teacher\TeacherSubjectController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toIso8601String(),
+    ]);
+});
+
 Route::redirect('/', '/student/login');
 
 Route::prefix('admin')->name('admin.')->group(function () {
