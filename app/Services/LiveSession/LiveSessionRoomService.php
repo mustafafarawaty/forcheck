@@ -8,7 +8,6 @@ use App\Models\TeacherComplaint;
 use App\Models\TeacherSession;
 use App\Models\TeacherSessionFile;
 use App\Models\TeacherSessionMessage;
-use App\Models\TeacherSessionSignal;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -171,22 +170,6 @@ class LiveSessionRoomService
     }
 
     /**
-     * Persist a WebRTC signaling packet.
-     *
-     * @param  array<string, mixed>  $payload
-     */
-    public function storeSignal(TeacherSession $session, string $role, string $signalType, array $payload): TeacherSessionSignal
-    {
-        $this->ensureRoomIsOpen($session);
-
-        return $session->signals()->create([
-            'sender_role' => $role,
-            'signal_type' => $signalType,
-            'payload' => $payload,
-        ]);
-    }
-
-    /**
      * Store a room chat message and refresh the session excerpt.
      */
     public function storeMessage(TeacherSession $session, string $role, string $message): TeacherSessionMessage
@@ -314,7 +297,7 @@ class LiveSessionRoomService
     /**
      * Build the room polling payload.
      */
-    public function roomState(TeacherSession $session, string $role, int $lastSignalId = 0): array
+    public function roomState(TeacherSession $session, string $role): array
     {
         $session = $this->syncSession($session)->load($this->roomRelations());
         $plannedEndAt = $session->plannedEndAt();
@@ -348,6 +331,8 @@ class LiveSessionRoomService
                         : null),
                 'can_join_now' => $this->canJoinNow($session),
                 'can_end_now' => $session->status === 'in_progress',
+                'teacher_name' => $session->teacher?->name ?? 'الأستاذ',
+                'student_name' => $session->student?->name ?? ($session->student_name ?: 'الطالب'),
                 'participant_name' => $role === 'teacher'
                     ? ($session->student_name ?: ($session->student?->name ?? 'الطالب'))
                     : ($session->teacher?->name ?? 'الأستاذ'),
@@ -383,17 +368,6 @@ class LiveSessionRoomService
                     'submitted_by' => $complaint->submitted_by,
                     'submitted_at' => $complaint->submitted_at?->toIso8601String(),
                 ]),
-            'signals' => $session->signals()
-                ->where('id', '>', $lastSignalId)
-                ->where('sender_role', '!=', $role)
-                ->orderBy('id')
-                ->get()
-                ->map(fn (TeacherSessionSignal $signal) => [
-                    'id' => $signal->id,
-                    'signal_type' => $signal->signal_type,
-                    'payload' => $signal->payload,
-                    'sender_role' => $signal->sender_role,
-                ]),
         ];
     }
 
@@ -406,8 +380,8 @@ class LiveSessionRoomService
     {
         $session = $this->syncSession($session)->loadMissing(['teacher', 'student', 'subject']);
         $joinUrl = $role === 'teacher'
-            ? route('teacher.sessions.room.show', ['sessionId' => $session->id, 'autojoin' => 1])
-            : route('student.sessions.room.show', ['sessionId' => $session->id, 'autojoin' => 1]);
+            ? route('teacher.sessions.room.show', ['sessionId' => $session->id, 'autojoin' => 1], false)
+            : route('student.sessions.room.show', ['sessionId' => $session->id, 'autojoin' => 1], false);
 
         return [
             'id' => $session->id,
@@ -580,13 +554,21 @@ class LiveSessionRoomService
      */
     private function joinCandidate(Collection $sessions): ?TeacherSession
     {
-        return $sessions
+        $candidates = $sessions
             ->map(fn (TeacherSession $session) => $this->syncSession($session))
-            ->first(function (TeacherSession $session): bool {
+            ->filter(function (TeacherSession $session): bool {
+                $plannedEndAt = $session->plannedEndAt();
+
                 return $session->teacher_confirmed_at
                     && $session->student_confirmed_at
-                    && in_array($session->status, ['upcoming', 'in_progress'], true);
-            });
+                    && in_array($session->status, ['upcoming', 'in_progress'], true)
+                    && $plannedEndAt
+                    && $plannedEndAt->isFuture();
+            })
+            ->values();
+
+        return $candidates->first(fn (TeacherSession $session) => $this->canJoinNow($session))
+            ?? $candidates->first();
     }
 
     /**

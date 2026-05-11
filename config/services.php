@@ -35,4 +35,20 @@ return [
         ],
     ],
 
+    'webrtc' => [
+        'stun_servers' => array_values(array_filter([
+            env('WEBRTC_STUN_SERVER_1', 'stun:stun.l.google.com:19302'),
+            env('WEBRTC_STUN_SERVER_2', 'stun:stun1.l.google.com:19302'),
+            env('WEBRTC_STUN_SERVER_3', 'stun:stun2.l.google.com:19302'),
+        ])),
+        'turn_server' => env('WEBRTC_TURN_SERVER'),
+        'turn_username' => env('WEBRTC_TURN_USERNAME'),
+        'turn_credential' => env('WEBRTC_TURN_CREDENTIAL'),
+    ],
+
+    'agora' => [
+        'app_id' => env('AGORA_APP_ID'),
+        'app_certificate' => env('AGORA_APP_CERTIFICATE'),
+    ],
+
 ];

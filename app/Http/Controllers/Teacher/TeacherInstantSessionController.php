@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
+use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Teacher\TeacherInstantSessionService;
 use App\Traits\ResolvesTeacherAuthentication;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,7 @@ class TeacherInstantSessionController extends Controller
 
     public function __construct(
         private readonly TeacherInstantSessionService $instantSessionService,
+        private readonly LiveSessionRoomService $roomService,
     ) {
     }
 
@@ -70,15 +72,19 @@ class TeacherInstantSessionController extends Controller
     }
 
     /**
-     * Poll pending live requests for lightweight real-time updates.
+     * Poll pending live requests and quick-join state.
      */
     public function poll(Request $request): JsonResponse
     {
         $teacher = $this->authenticatedTeacher($request);
         $requests = $this->instantSessionService->pending($teacher);
+        $activeSession = $this->roomService->joinCandidateForTeacher($teacher);
 
         return response()->json([
             'count' => $requests->count(),
+            'active_session_payload' => $activeSession
+                ? $this->roomService->quickJoinPayload($activeSession, 'teacher')
+                : null,
             'requests' => $requests->map(fn ($liveRequest) => [
                 'id' => $liveRequest->id,
                 'student_name' => $liveRequest->student->name,

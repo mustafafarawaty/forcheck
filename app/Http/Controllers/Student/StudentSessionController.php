@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Student\StoreStudentBookingRequest;
+use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Student\StudentBookingService;
 use App\Services\Student\StudentDirectoryService;
 use App\Services\Student\StudentSessionService;
 use App\Traits\ResolvesStudentAuthentication;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -23,6 +25,7 @@ class StudentSessionController extends Controller
         private readonly StudentSessionService $sessionService,
         private readonly StudentBookingService $bookingService,
         private readonly StudentDirectoryService $directoryService,
+        private readonly LiveSessionRoomService $roomService,
     ) {
     }
 
@@ -69,6 +72,7 @@ class StudentSessionController extends Controller
 
         return back()->with('status', 'تم تأكيد حضورك للجلسة.');
     }
+
     /**
      * Cancel an upcoming session.
      */
@@ -78,5 +82,20 @@ class StudentSessionController extends Controller
         $this->sessionService->cancel($student, $sessionId);
 
         return back()->with('status', 'تم إلغاء الجلسة بنجاح.');
+    }
+
+    /**
+     * Poll quick-join state for the authenticated student.
+     */
+    public function poll(Request $request): JsonResponse
+    {
+        $student = $this->authenticatedStudent($request);
+        $activeSession = $this->roomService->joinCandidateForStudent($student);
+
+        return response()->json([
+            'active_session_payload' => $activeSession
+                ? $this->roomService->quickJoinPayload($activeSession, 'student')
+                : null,
+        ]);
     }
 }

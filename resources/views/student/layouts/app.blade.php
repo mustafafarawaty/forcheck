@@ -61,6 +61,7 @@
             data-student-realtime
             data-realtime-channel="{{ app(\App\Services\Realtime\RealtimeChannelService::class)->studentDashboardChannel($currentStudent) }}"
             data-active-session='@json($studentActiveSessionPayload)'
+            data-poll-url="{{ route('student.sessions.poll') }}"
         ></div>
 
         <button type="button" class="student-floating-booking-btn" data-bs-toggle="modal" data-bs-target="#studentBookingModal">

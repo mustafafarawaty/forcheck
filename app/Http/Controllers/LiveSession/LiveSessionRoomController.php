@@ -8,8 +8,8 @@ use App\Http\Requests\LiveSession\StoreLiveSessionComplaintRequest;
 use App\Http\Requests\LiveSession\StoreLiveSessionFileRequest;
 use App\Http\Requests\LiveSession\StoreLiveSessionMessageRequest;
 use App\Http\Requests\LiveSession\StoreLiveSessionRecordingRequest;
-use App\Http\Requests\LiveSession\StoreLiveSessionSignalRequest;
 use App\Http\Requests\LiveSession\UpdateLiveSessionNotesRequest;
+use App\Libraries\RtcTokenBuilder;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\TeacherSession;
@@ -47,6 +47,7 @@ class LiveSessionRoomController extends Controller
             'stateUrl' => $this->routeFor($role, 'state', $session),
             'joinUrl' => $this->routeFor($role, 'join', $session),
             'signalUrl' => $this->routeFor($role, 'signal', $session),
+            'agoraTokenUrl' => $this->routeFor($role, 'agora-token', $session),
             'messageUrl' => $this->routeFor($role, 'message', $session),
             'fileUrl' => $this->routeFor($role, 'file', $session),
             'notesUrl' => $role === 'teacher'
@@ -56,6 +57,12 @@ class LiveSessionRoomController extends Controller
             'recordingUrl' => $this->routeFor($role, 'recording', $session),
             'endUrl' => $this->routeFor($role, 'end', $session),
             'roomChannel' => $this->channels->liveSessionChannel($session),
+            'appId' => config('services.agora.app_id'),
+            'iceServers' => [],
+            'redirectUrl' => $role === 'teacher'
+                ? route('teacher.sessions.index', ['selected_session_id' => $session->id], false)
+                : route('student.sessions.index', [], false),
+            'autojoin' => $request->boolean('autojoin'),
         ]);
     }
 
@@ -66,10 +73,9 @@ class LiveSessionRoomController extends Controller
     {
         [$actor, $role] = $this->actorFromRequest($request);
         $session = $this->resolveSession($actor, $role, $sessionId);
-        $lastSignalId = max(0, (int) $request->query('last_signal_id', 0));
 
         return response()->json(
-            $this->roomService->roomState($session, $role, $lastSignalId)
+            $this->roomService->roomState($session, $role)
         );
     }
 
@@ -93,27 +99,9 @@ class LiveSessionRoomController extends Controller
     /**
      * Store a signal packet.
      */
-    public function signal(StoreLiveSessionSignalRequest $request, int $sessionId): JsonResponse
+    public function signal(Request $request, int $sessionId): JsonResponse
     {
-        [$actor, $role] = $this->actorFromRequest($request);
-        $session = $this->resolveSession($actor, $role, $sessionId);
-        $signal = $this->roomService->storeSignal(
-            $session,
-            $role,
-            $request->validated('signal_type'),
-            $request->validated('payload')
-        );
-        $this->realtime->broadcastRoomEvent($session, 'signal', [
-            'id' => $signal->id,
-            'signal_type' => $signal->signal_type,
-            'payload' => $signal->payload,
-            'sender_role' => $signal->sender_role,
-        ]);
-
-        return response()->json([
-            'status' => 'ok',
-            'signal_id' => $signal->id,
-        ]);
+        return response()->json(['status' => 'ok']);
     }
 
     /**
@@ -221,6 +209,46 @@ class LiveSessionRoomController extends Controller
     }
 
     /**
+     * Generate Agora token for the session.
+     */
+    public function agoraToken(Request $request, int $sessionId): JsonResponse
+    {
+        [$actor, $role] = $this->actorFromRequest($request);
+        $session = $this->resolveSession($actor, $role, $sessionId);
+
+        $appId = config('services.agora.app_id');
+        $appCertificate = config('services.agora.app_certificate');
+
+        if (! $appId || ! $appCertificate) {
+            abort(500, 'Agora configuration missing');
+        }
+
+        $channelName = "session-{$session->id}";
+        $uid = 0;
+        $plannedEndAt = $session->plannedEndAt() ?? now()->addHours((int) ($session->duration_hours ?: 1));
+        $privilegeExpireTs = max(
+            now()->addHour()->timestamp,
+            $plannedEndAt->copy()->addMinutes(15)->timestamp,
+        );
+
+        $token = RtcTokenBuilder::buildTokenWithUid(
+            $appId,
+            $appCertificate,
+            $channelName,
+            $uid,
+            RtcTokenBuilder::RolePublisher,
+            $privilegeExpireTs,
+        );
+
+        return response()->json([
+            'token' => $token,
+            'appId' => $appId,
+            'channel' => $channelName,
+            'uid' => $uid,
+        ]);
+    }
+
+    /**
      * End the running session.
      */
     public function end(EndLiveSessionRequest $request, int $sessionId): JsonResponse
@@ -234,8 +262,9 @@ class LiveSessionRoomController extends Controller
         return response()->json([
             'status' => 'ok',
             'redirect_url' => $role === 'teacher'
-                ? route('teacher.sessions.index', ['selected_session_id' => $ended->id])
-                : route('student.sessions.index'),
+                ? route('teacher.sessions.index', ['selected_session_id' => $ended->id], false)
+                : route('student.sessions.index', [], false),
+            'session' => $this->roomService->roomState($ended, $role)['session'],
         ]);
     }
 
@@ -276,6 +305,6 @@ class LiveSessionRoomController extends Controller
     {
         $prefix = $role === 'teacher' ? 'teacher' : 'student';
 
-        return route("{$prefix}.sessions.room.{$action}", $session->id);
+        return route("{$prefix}.sessions.room.{$action}", $session->id, false);
     }
 }

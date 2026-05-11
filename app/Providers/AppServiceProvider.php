@@ -6,9 +6,11 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Student\StudentDirectoryService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -25,6 +27,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->configureViteForCurrentRequest();
+
         View::composer('teacher.*', function ($view): void {
             $teacherId = session('teacher_id');
             $teacher = $teacherId ? Teacher::query()->with('subjects')->find($teacherId) : null;
@@ -89,5 +93,24 @@ class AppServiceProvider extends ServiceProvider
             $view->with('studentDurationOptions', $directoryService->durationOptions());
             $view->with('studentActiveSessionPayload', $activeSessionPayload);
         });
+    }
+
+    protected function configureViteForCurrentRequest(): void
+    {
+        $hotFile = public_path('hot');
+        $manifestFile = public_path('build/manifest.json');
+
+        if (! is_file($hotFile) || ! is_file($manifestFile)) {
+            return;
+        }
+
+        if ($this->shouldUseBuiltAssets(request())) {
+            Vite::useHotFile(storage_path('framework/vite.hot.disabled'));
+        }
+    }
+
+    protected function shouldUseBuiltAssets(Request $request): bool
+    {
+        return ! in_array($request->getHost(), ['127.0.0.1', 'localhost', '::1'], true);
     }
 }

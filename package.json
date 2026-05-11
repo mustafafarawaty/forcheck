@@ -9,10 +9,13 @@
     "dependencies": {
         "@fortawesome/fontawesome-free": "^7.2.0",
         "admin-lte": "^4.0.0-rc7",
+        "agora-rtc-sdk-ng": "^4.24.3",
         "bootstrap": "^5.3.8",
-        "overlayscrollbars": "^2.15.1"
+        "overlayscrollbars": "^2.15.1",
+        "vue": "^3.5.13"
     },
     "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.6",
         "@tailwindcss/vite": "^4.0.0",
         "axios": "^1.11.0",
         "concurrently": "^9.0.1",

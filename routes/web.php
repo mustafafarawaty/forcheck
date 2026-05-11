@@ -52,6 +52,7 @@ Route::prefix('teacher')->name('teacher.')->group(function () {
         Route::get('/sessions/{sessionId}/room/state', [LiveSessionRoomController::class, 'state'])->name('sessions.room.state');
         Route::post('/sessions/{sessionId}/room/join', [LiveSessionRoomController::class, 'join'])->name('sessions.room.join');
         Route::post('/sessions/{sessionId}/room/signal', [LiveSessionRoomController::class, 'signal'])->name('sessions.room.signal');
+        Route::post('/sessions/{sessionId}/room/agora-token', [LiveSessionRoomController::class, 'agoraToken'])->name('sessions.room.agora-token');
         Route::post('/sessions/{sessionId}/room/message', [LiveSessionRoomController::class, 'message'])->name('sessions.room.message');
         Route::post('/sessions/{sessionId}/room/file', [LiveSessionRoomController::class, 'file'])->name('sessions.room.file');
         Route::post('/sessions/{sessionId}/room/notes', [LiveSessionRoomController::class, 'notes'])->name('sessions.room.notes');
@@ -75,6 +76,7 @@ Route::prefix('student')->name('student.')->group(function () {
         Route::get('/profile', [StudentProfileController::class, 'edit'])->name('profile.edit');
         Route::put('/profile', [StudentProfileController::class, 'update'])->name('profile.update');
         Route::get('/sessions', [StudentSessionController::class, 'index'])->name('sessions.index');
+        Route::get('/sessions/poll', [StudentSessionController::class, 'poll'])->name('sessions.poll');
         Route::post('/sessions/book', [StudentSessionController::class, 'storeBooking'])->name('sessions.book');
         Route::post('/sessions/{sessionId}/confirm', [StudentSessionController::class, 'confirm'])->name('sessions.confirm');
         Route::post('/sessions/{sessionId}/cancel', [StudentSessionController::class, 'cancel'])->name('sessions.cancel');
@@ -82,6 +84,7 @@ Route::prefix('student')->name('student.')->group(function () {
         Route::get('/sessions/{sessionId}/room/state', [LiveSessionRoomController::class, 'state'])->name('sessions.room.state');
         Route::post('/sessions/{sessionId}/room/join', [LiveSessionRoomController::class, 'join'])->name('sessions.room.join');
         Route::post('/sessions/{sessionId}/room/signal', [LiveSessionRoomController::class, 'signal'])->name('sessions.room.signal');
+        Route::post('/sessions/{sessionId}/room/agora-token', [LiveSessionRoomController::class, 'agoraToken'])->name('sessions.room.agora-token');
         Route::post('/sessions/{sessionId}/room/message', [LiveSessionRoomController::class, 'message'])->name('sessions.room.message');
         Route::post('/sessions/{sessionId}/room/file', [LiveSessionRoomController::class, 'file'])->name('sessions.room.file');
         Route::post('/sessions/{sessionId}/room/complaint', [LiveSessionRoomController::class, 'complaint'])->name('sessions.room.complaint');

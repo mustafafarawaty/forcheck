@@ -1,0 +1,210 @@
+<?php
+
+namespace App\Libraries;
+
+class Message
+{
+    public $salt;
+    public $ts;
+    public $privileges;
+
+    public function __construct()
+    {
+        $this->salt = rand(0, 100000);
+
+        $date = new \DateTime('now', new \DateTimeZone('UTC'));
+        $this->ts = $date->getTimestamp() + 24 * 3600;
+
+        $this->privileges = [];
+    }
+
+    public function packContent()
+    {
+        $buffer = unpack('C*', pack('V', $this->salt));
+        $buffer = array_merge($buffer, unpack('C*', pack('V', $this->ts)));
+        $buffer = array_merge($buffer, unpack('C*', pack('v', sizeof($this->privileges))));
+
+        foreach ($this->privileges as $key => $value) {
+            $buffer = array_merge($buffer, unpack('C*', pack('v', $key)));
+            $buffer = array_merge($buffer, unpack('C*', pack('V', $value)));
+        }
+
+        return $buffer;
+    }
+
+    public function unpackContent($msg)
+    {
+        $pos = 0;
+        $salt = unpack('V', substr($msg, $pos, 4))[1];
+        $pos += 4;
+        $ts = unpack('V', substr($msg, $pos, 4))[1];
+        $pos += 4;
+        $size = unpack('v', substr($msg, $pos, 2))[1];
+        $pos += 2;
+
+        $privileges = [];
+
+        for ($i = 0; $i < $size; $i++) {
+            $key = unpack('v', substr($msg, $pos, 2));
+            $pos += 2;
+            $value = unpack('V', substr($msg, $pos, 4));
+            $pos += 4;
+            $privileges[$key[1]] = $value[1];
+        }
+
+        $this->salt = $salt;
+        $this->ts = $ts;
+        $this->privileges = $privileges;
+    }
+}
+
+class AccessToken
+{
+    public const Privileges = [
+        'kJoinChannel' => 1,
+        'kPublishAudioStream' => 2,
+        'kPublishVideoStream' => 3,
+        'kPublishDataStream' => 4,
+        'kRtmLogin' => 1000,
+    ];
+
+    public $appID;
+    public $appCertificate;
+    public $channelName;
+    public $uid;
+    public $message;
+
+    public function __construct()
+    {
+        $this->message = new Message();
+    }
+
+    public function setUid($uid)
+    {
+        $this->uid = $uid === 0 ? '' : $uid.'';
+    }
+
+    public function is_nonempty_string($name, $str)
+    {
+        if (is_string($str) && $str !== '') {
+            return true;
+        }
+
+        echo $name.' check failed, should be a non-empty string';
+
+        return false;
+    }
+
+    public static function init($appID, $appCertificate, $channelName, $uid)
+    {
+        $accessToken = new self();
+
+        if (
+            ! $accessToken->is_nonempty_string('appID', $appID) ||
+            ! $accessToken->is_nonempty_string('appCertificate', $appCertificate) ||
+            ! $accessToken->is_nonempty_string('channelName', $channelName)
+        ) {
+            return null;
+        }
+
+        $accessToken->appID = $appID;
+        $accessToken->appCertificate = $appCertificate;
+        $accessToken->channelName = $channelName;
+        $accessToken->setUid($uid);
+        $accessToken->message = new Message();
+
+        return $accessToken;
+    }
+
+    public static function initWithToken($token, $appCertificate, $channel, $uid)
+    {
+        $accessToken = new self();
+
+        if (! $accessToken->extract($token, $appCertificate, $channel, $uid)) {
+            return null;
+        }
+
+        return $accessToken;
+    }
+
+    public function addPrivilege($key, $expireTimestamp)
+    {
+        $this->message->privileges[$key] = $expireTimestamp;
+
+        return $this;
+    }
+
+    public function extract($token, $appCertificate, $channelName, $uid)
+    {
+        $verLen = 3;
+        $appIdLen = 32;
+        $version = substr($token, 0, $verLen);
+
+        if ($version !== '006') {
+            echo 'invalid version '.$version;
+
+            return false;
+        }
+
+        if (
+            ! $this->is_nonempty_string('token', $token) ||
+            ! $this->is_nonempty_string('appCertificate', $appCertificate) ||
+            ! $this->is_nonempty_string('channelName', $channelName)
+        ) {
+            return false;
+        }
+
+        $appId = substr($token, $verLen, $appIdLen);
+        $content = base64_decode(substr($token, $verLen + $appIdLen, strlen($token) - ($verLen + $appIdLen)));
+
+        $pos = 0;
+        $len = unpack('v', $content.substr($pos, 2))[1];
+        $pos += 2;
+        $pos += $len;
+        $pos += 4;
+        $pos += 4;
+        $msgLen = unpack('v', substr($content, $pos, 2))[1];
+        $pos += 2;
+        $msg = substr($content, $pos, $msgLen);
+
+        $this->appID = $appId;
+        $message = new Message();
+        $message->unpackContent($msg);
+        $this->message = $message;
+        $this->appCertificate = $appCertificate;
+        $this->channelName = $channelName;
+        $this->setUid($uid);
+
+        return true;
+    }
+
+    public function build()
+    {
+        $msg = $this->message->packContent();
+        $val = array_merge(
+            unpack('C*', $this->appID),
+            unpack('C*', $this->channelName),
+            unpack('C*', $this->uid),
+            $msg,
+        );
+
+        $sig = hash_hmac('sha256', implode(array_map('chr', $val)), $this->appCertificate, true);
+        $crcChannelName = crc32($this->channelName) & 0xffffffff;
+        $crcUid = crc32($this->uid) & 0xffffffff;
+
+        $content = array_merge(
+            unpack('C*', packString($sig)),
+            unpack('C*', pack('V', $crcChannelName)),
+            unpack('C*', pack('V', $crcUid)),
+            unpack('C*', pack('v', count($msg))),
+            $msg,
+        );
+
+        return '006'.$this->appID.base64_encode(implode(array_map('chr', $content)));
+    }
+}
+
+function packString($value)
+{
+    return pack('v', strlen($value)).$value;
+}

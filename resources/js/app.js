@@ -1,5 +1,5 @@
 import './bootstrap';
-import './runtime-overrides';
+// import './runtime-overrides';
 import * as bootstrap from 'bootstrap';
 import 'admin-lte/dist/js/adminlte.js';
 
@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     (runtime.initializeTeacherRealtime || initializeTeacherRealtime)();
     (runtime.initializeStudentRealtime || initializeStudentRealtime)();
     (runtime.initializeJoinSessionPrompts || initializeJoinSessionPrompts)();
+    initializeVideoCallPage();
     (runtime.initializeLiveSessionRoom || initializeLiveSessionRoom)();
 });
 
@@ -186,6 +187,27 @@ function normalizeJoinPayload(payload) {
     };
 }
 
+function joinPayloadFromSessionUpdate(scope, payload) {
+    if (!payload?.id || !payload?.join_url) {
+        return null;
+    }
+
+    return {
+        id: payload.id,
+        subject_name: payload.subject_name || 'جلسة',
+        participant_name: scope === 'teacher'
+            ? (payload.student_name || 'الطالب')
+            : (payload.teacher_name || 'الأستاذ'),
+        scheduled_at_label: payload.scheduled_at || '',
+        scheduled_at_iso: payload.scheduled_at_iso || null,
+        started_at_iso: payload.started_at_iso || null,
+        duration_hours: Number(payload.duration_hours || 1),
+        status: payload.status || 'upcoming',
+        can_join_now: Boolean(payload.can_join_now),
+        join_url: payload.join_url,
+    };
+}
+
 function joinPromptStorageKey(payload) {
     return `join-prompt-shown-${document.body.dataset.themeScope || 'app'}-${payload.id}`;
 }
@@ -310,6 +332,174 @@ function renderQuickJoinTargets(scope, payload) {
         button.classList.toggle('disabled', !normalized?.join_url);
         button.classList.toggle('d-none', !(normalized && normalized.can_join_now));
     });
+}
+
+function initializeTeacherRealtime() {
+    const indicator = document.querySelector('[data-live-request-indicator]');
+
+    if (!indicator || !window.Echo) {
+        return;
+    }
+
+    const prompt = document.getElementById('teacherJoinSessionPrompt');
+    const realtimeChannel = indicator.dataset.realtimeChannel;
+    const countNode = indicator.querySelector('[data-live-request-count]');
+    const summaryNode = indicator.querySelector('[data-live-toast-summary]');
+    const metaNode = indicator.querySelector('[data-live-toast-meta]');
+    const acceptForm = indicator.querySelector('[data-live-accept-form]');
+    const rejectForm = indicator.querySelector('[data-live-reject-form]');
+    const requestCard = indicator.querySelector('[data-teacher-live-card]');
+    const initialPayload = safeJsonParse(indicator.dataset.activeSession, null);
+    const pollUrl = indicator.dataset.pollUrl;
+
+    renderQuickJoinTargets('teacher', initialPayload);
+    applyJoinPromptPayload(prompt, initialPayload);
+
+    const applyActiveSessionPayload = activeSessionPayload => {
+        indicator.dataset.activeSession = JSON.stringify(activeSessionPayload);
+        renderQuickJoinTargets('teacher', activeSessionPayload);
+        applyJoinPromptPayload(prompt, activeSessionPayload);
+    };
+
+    const pollActiveState = () => {
+        if (!pollUrl) {
+            return;
+        }
+
+        fetch(pollUrl, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+        })
+            .then(response => response.json())
+            .then(payload => {
+                applyActiveSessionPayload(payload?.active_session_payload ?? null);
+
+                if (!countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
+                    return;
+                }
+
+                const requestsPayload = payload?.requests ? payload : { count: 0, requests: [] };
+                countNode.textContent = String(requestsPayload.count || 0);
+                countNode.classList.toggle('d-none', !requestsPayload.count);
+
+                if (!requestsPayload.count) {
+                    requestCard.classList.add('d-none');
+                    return;
+                }
+
+                const latest = requestsPayload.requests?.[0];
+
+                if (!latest) {
+                    requestCard.classList.add('d-none');
+                    return;
+                }
+
+                summaryNode.textContent = `${latest.student_name} طلب ${latest.subject_name}`;
+                metaNode.textContent = latest.requested_at || '';
+                acceptForm.action = latest.accept_url || '';
+                rejectForm.action = latest.reject_url || '';
+                requestCard.classList.remove('d-none');
+            })
+            .catch(() => { });
+    };
+
+    window.Echo.channel(realtimeChannel).listen('.teacher.realtime.updated', payload => {
+        const activeSessionPayload = payload?.active_session_payload
+            ?? joinPayloadFromSessionUpdate('teacher', payload?.session_update)
+            ?? null;
+
+        applyActiveSessionPayload(activeSessionPayload);
+
+        if (payload?.session_update) {
+            updateSessionTriggerPayload('[data-session-trigger]', payload.session_update);
+        }
+
+        if (!countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
+            return;
+        }
+
+        const requestsPayload = payload?.live_requests ?? { count: 0, requests: [] };
+        countNode.textContent = String(requestsPayload.count || 0);
+        countNode.classList.toggle('d-none', !requestsPayload.count);
+
+        if (!requestsPayload.count) {
+            requestCard.classList.add('d-none');
+            return;
+        }
+
+        const latest = requestsPayload.requests?.[0];
+
+        if (!latest) {
+            requestCard.classList.add('d-none');
+            return;
+        }
+
+        summaryNode.textContent = `${latest.student_name} طلب ${latest.subject_name}`;
+        metaNode.textContent = latest.requested_at || '';
+        acceptForm.action = latest.accept_url || '';
+        rejectForm.action = latest.reject_url || '';
+        requestCard.classList.remove('d-none');
+    });
+
+    pollActiveState();
+    window.setInterval(pollActiveState, 5000);
+}
+
+function initializeStudentRealtime() {
+    const indicator = document.querySelector('[data-student-realtime]');
+
+    if (!indicator || !window.Echo) {
+        return;
+    }
+
+    const prompt = document.getElementById('studentJoinSessionPrompt');
+    const realtimeChannel = indicator.dataset.realtimeChannel;
+    const initialPayload = safeJsonParse(indicator.dataset.activeSession, null);
+    const pollUrl = indicator.dataset.pollUrl;
+
+    renderQuickJoinTargets('student', initialPayload);
+    applyJoinPromptPayload(prompt, initialPayload);
+
+    const applyActiveSessionPayload = activeSessionPayload => {
+        indicator.dataset.activeSession = JSON.stringify(activeSessionPayload);
+        renderQuickJoinTargets('student', activeSessionPayload);
+        applyJoinPromptPayload(prompt, activeSessionPayload);
+    };
+
+    const pollActiveState = () => {
+        if (!pollUrl) {
+            return;
+        }
+
+        fetch(pollUrl, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+        })
+            .then(response => response.json())
+            .then(payload => {
+                applyActiveSessionPayload(payload?.active_session_payload ?? null);
+            })
+            .catch(() => { });
+    };
+
+    window.Echo.channel(realtimeChannel).listen('.student.realtime.updated', payload => {
+        const activeSessionPayload = payload?.active_session_payload
+            ?? joinPayloadFromSessionUpdate('student', payload?.session_update)
+            ?? null;
+
+        applyActiveSessionPayload(activeSessionPayload);
+
+        if (payload?.session_update) {
+            updateSessionTriggerPayload('[data-student-session-trigger]', payload.session_update);
+        }
+    });
+
+    pollActiveState();
+    window.setInterval(pollActiveState, 5000);
 }
 
 function extractErrorMessage(error, fallback) {
@@ -952,6 +1142,23 @@ function initializeJoinSessionPrompts() {
             bootstrap.Modal.getOrCreateInstance(prompt).show();
         }, 350);
     });
+}
+
+async function initializeVideoCallPage() {
+    const root = document.querySelector('[data-video-call-app]');
+
+    if (!root) {
+        return;
+    }
+
+    const [{ createApp }, { default: VideoCall }] = await Promise.all([
+        import('vue'),
+        import('./pages/VideoCall.vue'),
+    ]);
+
+    createApp(VideoCall, {
+        config: safeJsonParse(root.dataset.videoCallConfig, {}),
+    }).mount(root);
 }
 
 function initializeLiveSessionRoom() {

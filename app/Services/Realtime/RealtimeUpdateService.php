@@ -27,17 +27,25 @@ class RealtimeUpdateService
     {
         $teacher->loadMissing('liveRequests.student', 'liveRequests.subject');
 
-        event(new BroadcastPayloadEvent(
-            [$this->channels->teacherDashboardChannel($teacher)],
-            'teacher.realtime.updated',
-            [
-                'active_session_payload' => $this->joinCandidatePayloadForTeacher($teacher),
-                'live_requests' => $this->teacherLiveRequestsPayload($teacher),
-                'session_update' => $session && $session->teacher_id === $teacher->id
-                    ? $this->teacherSessionPayload($session->fresh(['subject', 'complaints', 'student', 'files']))
-                    : null,
-            ],
-        ));
+        try {
+            event(new BroadcastPayloadEvent(
+                [$this->channels->teacherDashboardChannel($teacher)],
+                'teacher.realtime.updated',
+                [
+                    'active_session_payload' => $this->joinCandidatePayloadForTeacher($teacher),
+                    'live_requests' => $this->teacherLiveRequestsPayload($teacher),
+                    'session_update' => $session && $session->teacher_id === $teacher->id
+                        ? $this->teacherSessionPayload($session->fresh(['subject', 'complaints', 'student', 'files']))
+                        : null,
+                ],
+            ));
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            // Log the error but don't fail the request
+            \Log::warning('Failed to broadcast teacher dashboard update', [
+                'teacher_id' => $teacher->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -45,17 +53,25 @@ class RealtimeUpdateService
      */
     public function broadcastStudentDashboard(Student $student, ?TeacherSession $session = null, ?TeacherLiveRequest $liveRequest = null): void
     {
-        event(new BroadcastPayloadEvent(
-            [$this->channels->studentDashboardChannel($student)],
-            'student.realtime.updated',
-            [
-                'active_session_payload' => $this->joinCandidatePayloadForStudent($student),
-                'session_update' => $session && $session->student_id === $student->id
-                    ? $this->studentSessionPayload($session->fresh(['teacher', 'subject', 'complaints', 'files']))
-                    : null,
-                'live_request_update' => $liveRequest ? $this->studentLiveRequestPayload($liveRequest->fresh(['teacher', 'subject', 'session'])) : null,
-            ],
-        ));
+        try {
+            event(new BroadcastPayloadEvent(
+                [$this->channels->studentDashboardChannel($student)],
+                'student.realtime.updated',
+                [
+                    'active_session_payload' => $this->joinCandidatePayloadForStudent($student),
+                    'session_update' => $session && $session->student_id === $student->id
+                        ? $this->studentSessionPayload($session->fresh(['teacher', 'subject', 'complaints', 'files']))
+                        : null,
+                    'live_request_update' => $liveRequest ? $this->studentLiveRequestPayload($liveRequest->fresh(['teacher', 'subject', 'session'])) : null,
+                ],
+            ));
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            // Log the error but don't fail the request
+            \Log::warning('Failed to broadcast student dashboard update', [
+                'student_id' => $student->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -65,15 +81,24 @@ class RealtimeUpdateService
      */
     public function broadcastRoomEvent(TeacherSession $session, string $type, array $payload = []): void
     {
-        event(new BroadcastPayloadEvent(
-            [$this->channels->liveSessionChannel($session)],
-            'live-session.event',
-            [
+        try {
+            event(new BroadcastPayloadEvent(
+                [$this->channels->liveSessionChannel($session)],
+                'live-session.event',
+                [
+                    'type' => $type,
+                    'payload' => $payload,
+                    'session' => $this->sharedRoomSessionPayload($session->fresh(['teacher', 'student', 'subject'])),
+                ],
+            ));
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            // Log the error but don't fail the request
+            \Log::warning('Failed to broadcast room event', [
+                'session_id' => $session->id,
                 'type' => $type,
-                'payload' => $payload,
-                'session' => $this->sharedRoomSessionPayload($session->fresh(['teacher', 'student', 'subject'])),
-            ],
-        ));
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -194,15 +219,16 @@ class RealtimeUpdateService
             'scheduled_at' => $session->scheduled_at?->toIso8601String(),
             'started_at' => $session->started_at?->toIso8601String(),
             'ended_at' => $session->ended_at?->toIso8601String(),
-            'planned_end_at' => $session->started_at
-                ? $session->started_at->copy()->addHours((int) ($session->duration_hours ?: 1))->toIso8601String()
-                : null,
+            'planned_end_at' => $session->plannedEndAt()?->toIso8601String(),
             'join_deadline_at' => $session->join_deadline_at?->toIso8601String(),
             'teacher_joined_at' => $session->teacher_joined_at?->toIso8601String(),
             'student_joined_at' => $session->student_joined_at?->toIso8601String(),
             'recording_url' => $session->recording_public_url,
             'recording_expires_at' => $session->recording_expires_at?->toIso8601String(),
             'recording_note' => $this->recordingNote($session),
+            'subject_name' => $session->subject?->name ?? 'جلسة',
+            'teacher_name' => $session->teacher?->name ?? 'الأستاذ',
+            'student_name' => $session->student?->name ?? ($session->student_name ?: 'الطالب'),
         ];
     }
 
