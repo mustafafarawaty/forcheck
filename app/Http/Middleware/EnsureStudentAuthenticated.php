@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Student;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -25,7 +26,16 @@ class EnsureStudentAuthenticated
             return redirect()->route('student.login');
         }
 
-        $student = Student::find($studentId);
+        try {
+            $student = Student::find($studentId);
+        } catch (\Throwable $e) {
+            Log::error('EnsureStudentAuthenticated: database query failed', [
+                'student_id' => $studentId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('student.login');
+        }
 
         if (! $student) {
             $request->session()->forget('student_id');
