@@ -20,5 +20,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Ensure every exception is reported to the log so Railway captures it.
+        // By default Laravel may suppress certain exception types; this makes
+        // all unhandled exceptions visible in the deployment logs.
+        $exceptions->reportable(function (\Throwable $e): bool {
+            \Illuminate\Support\Facades\Log::error($e->getMessage(), [
+                'exception' => $e,
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+                'trace'     => $e->getTraceAsString(),
+            ]);
+
+            return false; // false = let Laravel's default handler also run
+        });
     })->create();

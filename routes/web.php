@@ -16,6 +16,7 @@ use App\Http\Controllers\Teacher\TeacherSessionController;
 use App\Http\Controllers\Teacher\TeacherSubjectController;
 use Illuminate\Support\Facades\Route;
 
+
 Route::redirect('/', '/student/login');
 
 Route::prefix('admin')->name('admin.')->group(function () {
