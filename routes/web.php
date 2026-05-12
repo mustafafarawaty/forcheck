@@ -1,19 +1,19 @@
 <?php
 
-use App\Http\Controllers\Student\StudentAuthController;
-use App\Http\Controllers\Student\StudentDashboardController;
-use App\Http\Controllers\Student\StudentProfileController;
-use App\Http\Controllers\Student\StudentSessionController;
-use App\Http\Controllers\Student\StudentTeacherController;
-use App\Http\Controllers\LiveSession\LiveSessionRoomController;
-use App\Http\Controllers\Teacher\TeacherAuthController;
-use App\Http\Controllers\Teacher\TeacherAvailabilityController;
-use App\Http\Controllers\Teacher\TeacherComplaintController;
-use App\Http\Controllers\Teacher\TeacherDashboardController;
-use App\Http\Controllers\Teacher\TeacherInstantSessionController;
-use App\Http\Controllers\Teacher\TeacherProfileController;
-use App\Http\Controllers\Teacher\TeacherSessionController;
-use App\Http\Controllers\Teacher\TeacherSubjectController;
+// use App\Http\Controllers\Student\StudentAuthController;
+// use App\Http\Controllers\Student\StudentDashboardController;
+// use App\Http\Controllers\Student\StudentProfileController;
+// use App\Http\Controllers\Student\StudentSessionController;
+// use App\Http\Controllers\Student\StudentTeacherController;
+// use App\Http\Controllers\LiveSession\LiveSessionRoomController;
+// use App\Http\Controllers\Teacher\TeacherAuthController;
+// use App\Http\Controllers\Teacher\TeacherAvailabilityController;
+// use App\Http\Controllers\Teacher\TeacherComplaintController;
+// use App\Http\Controllers\Teacher\TeacherDashboardController;
+// use App\Http\Controllers\Teacher\TeacherInstantSessionController;
+// use App\Http\Controllers\Teacher\TeacherProfileController;
+// use App\Http\Controllers\Teacher\TeacherSessionController;
+// use App\Http\Controllers\Teacher\TeacherSubjectController;
 use Illuminate\Support\Facades\Route;
 
 // Simple health check — returns 200 without triggering any redirect or DB logic.
