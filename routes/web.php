@@ -16,6 +16,11 @@ use App\Http\Controllers\Teacher\TeacherSessionController;
 use App\Http\Controllers\Teacher\TeacherSubjectController;
 use Illuminate\Support\Facades\Route;
 
+// Simple health check — returns 200 without triggering any redirect or DB logic.
+// Used by Railway's health check and for manual liveness verification.
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok'], 200);
+});
 
 Route::redirect('/', '/student/login');
 
