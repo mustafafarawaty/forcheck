@@ -22,7 +22,9 @@ Route::get('/health', function () {
     return response()->json(['status' => 'ok'], 200);
 });
 
-Route::redirect('/', '/student/login');
+Route::get('/', function () {
+    return 'Laravel works';
+});
 
 Route::prefix('admin')->name('admin.')->group(function () {
     Route::view('/', 'admin.pages.dashboard')->name('dashboard');
