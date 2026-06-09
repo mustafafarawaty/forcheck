@@ -25,7 +25,7 @@ class CancelTeacherSessionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'cancellation_reason' => ['required', 'string', 'min:5', 'max:1000'],
+            'cancellation_reason' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }

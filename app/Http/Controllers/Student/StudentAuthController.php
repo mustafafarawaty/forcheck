@@ -45,6 +45,12 @@ class StudentAuthController extends Controller
                 ->withErrors(['phone' => 'بيانات الدخول غير صحيحة.']);
         }
 
+        if ($student->isDisabled()) {
+            return back()
+                ->withInput($request->safe()->only('phone'))
+                ->withErrors(['phone' => 'الحساب معطل من قبل الإدارة. يرجى التواصل مع الدعم لمراجعة الحالة.']);
+        }
+
         $request->session()->regenerate();
         $request->session()->put('student_id', $student->id);
 

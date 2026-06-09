@@ -33,6 +33,14 @@ class EnsureStudentAuthenticated
             return redirect()->route('student.login');
         }
 
+        if ($student->isDisabled()) {
+            $request->session()->forget('student_id');
+
+            return redirect()
+                ->route('student.login')
+                ->withErrors(['phone' => 'الحساب معطل من قبل الإدارة. يرجى التواصل مع الدعم لمراجعة الحالة.']);
+        }
+
         $request->attributes->set('authenticatedStudent', $student);
 
         return $next($request);

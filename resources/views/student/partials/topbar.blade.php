@@ -6,6 +6,10 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a href="{{ route('student.wallet.index') }}" class="student-topbar-card student-balance-card d-flex align-items-center gap-2">
+                <i class="fas fa-wallet text-primary"></i>
+                <span>الرصيد: {{ number_format((float) ($currentStudent->balance ?? 0), 0) }}</span>
+            </a>
             <button type="button" class="student-topbar-card student-theme-toggle" data-theme-toggle>
                 <i class="fas fa-moon"></i>
                 <span>ليلي / نهاري</span>

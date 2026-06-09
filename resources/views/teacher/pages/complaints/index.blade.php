@@ -20,6 +20,7 @@
                                 <th>مرتبطة بـ</th>
                                 <th>التاريخ</th>
                                 <th>الحالة</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -29,14 +30,17 @@
                                     <td>{{ $complaint->session?->subject?->name ? $complaint->session->subject->name . ' - ' . $complaint->session->student_name : 'غير مرتبطة بجلسة' }}</td>
                                     <td>{{ $complaint->submitted_at?->format('Y-m-d h:i A') }}</td>
                                     <td>
-                                        <span class="teacher-chip {{ $complaint->status === 'resolved' ? 'teacher-chip-success' : ($complaint->status === 'pending_info' ? 'teacher-chip-danger' : 'teacher-chip-warning') }}">
-                                            {{ $complaint->status === 'resolved' ? 'تم الرد' : ($complaint->status === 'pending_info' ? 'بانتظار معلومات' : 'قيد المراجعة') }}
+                                        <span class="teacher-chip {{ $complaint->status === 'completed' ? 'teacher-chip-success' : ($complaint->status === 'closed' ? 'teacher-chip-danger' : 'teacher-chip-warning') }}">
+                                            {{ ['in_progress' => 'قيد المعالجة', 'completed' => 'مكتملة', 'closed' => 'مغلقة', 'pending' => 'جديدة'][$complaint->status] ?? $complaint->status }}
                                         </span>
+                                    </td>
+                                    <td>
+                                        <a href="{{ route('teacher.complaints.show', $complaint->id) }}" class="btn btn-sm btn-outline-primary">رد</a>
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">لا توجد شكاوى بعد.</td>
+                                    <td colspan="5" class="text-center text-muted py-4">لا توجد شكاوى بعد.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -49,7 +53,7 @@
             <div class="teacher-form-card mb-4 teacher-mobile-card">
                 <div class="teacher-section-title mb-4">إضافة شكوى جديدة</div>
 
-                <form action="{{ route('teacher.complaints.store') }}" method="POST" class="row g-3">
+                <form action="{{ route('teacher.complaints.store') }}" method="POST" enctype="multipart/form-data" class="row g-3">
                     @csrf
                     <div class="col-12">
                         <label class="form-label fw-semibold">عنوان الشكوى</label>
@@ -69,6 +73,10 @@
                     <div class="col-12">
                         <label class="form-label fw-semibold">وصف الشكوى</label>
                         <textarea name="description" class="form-control teacher-form-control" rows="5" placeholder="اشرح المشكلة بالتفصيل">{{ old('description') }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">إرفاق صورة (اختياري)</label>
+                        <input type="file" name="attachment" accept="image/*" class="form-control teacher-form-control">
                     </div>
                     <div class="col-12">
                         <button type="submit" class="btn teacher-btn-primary w-100">إرسال الشكوى</button>

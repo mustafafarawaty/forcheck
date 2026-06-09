@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Str;
+
 return [
     'default' => env('REVERB_SERVER', 'reverb'),
 
@@ -10,7 +12,23 @@ return [
             'path' => env('REVERB_SERVER_PATH', ''),
             'hostname' => env('REVERB_HOST'),
             'options' => [
-                'tls' => [],
+                'tls' => array_filter([
+                    'local_cert' => env('REVERB_TLS_CERT')
+                        ?: (file_exists(base_path('.certs/reverb-local.crt')) ? base_path('.certs/reverb-local.crt') : null),
+                    'local_pk' => env('REVERB_TLS_KEY')
+                        ?: (file_exists(base_path('.certs/reverb-local.key')) ? base_path('.certs/reverb-local.key') : null),
+                    'passphrase' => env('REVERB_TLS_PASSPHRASE') ?: null,
+                    'verify_peer' => filter_var(
+                        env('REVERB_TLS_VERIFY_PEER', env('APP_ENV', 'production') === 'production'),
+                        FILTER_VALIDATE_BOOL,
+                        FILTER_NULL_ON_FAILURE
+                    ),
+                    'allow_self_signed' => filter_var(
+                        env('REVERB_TLS_ALLOW_SELF_SIGNED', false),
+                        FILTER_VALIDATE_BOOL,
+                        FILTER_NULL_ON_FAILURE
+                    ),
+                ], static fn ($value) => $value !== null && $value !== ''),
             ],
             'max_request_size' => env('REVERB_MAX_REQUEST_SIZE', 10_000),
             'scaling' => [
@@ -40,7 +58,7 @@ return [
                 'secret' => env('REVERB_APP_SECRET'),
                 'app_id' => env('REVERB_APP_ID'),
                 'options' => [
-                    'host' => env('REVERB_HOST'),
+                    'host' => env('REVERB_HOST') ?: Str::after((string) env('APP_URL'), '://'),
                     'port' => env('REVERB_PORT', 443),
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',

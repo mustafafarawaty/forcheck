@@ -26,6 +26,7 @@ class EndLiveSessionRequest extends FormRequest
     {
         return [
             'confirm_end' => ['nullable', 'boolean'],
+            'cancellation_reason' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }

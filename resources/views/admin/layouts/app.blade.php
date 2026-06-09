@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@yield('title', 'لوحة الإدارة') | بعيد ليرن</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @stack('head')
 </head>
 <body class="layout-fixed sidebar-expand-lg bg-body-tertiary admin-shell">
     <div class="app-wrapper">
@@ -28,11 +29,27 @@
             </div>
             <div class="app-content">
                 <div class="container-fluid">
+                    @if(session('status'))
+                        <div class="alert alert-success">{{ session('status') }}</div>
+                    @endif
+
+                    @if($errors->any())
+                        <div class="alert alert-danger">
+                            <ul class="mb-0 ps-3">
+                                @foreach($errors->all() as $error)
+                                    <li>{{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     @yield('content')
                 </div>
             </div>
         </main>
         @include('admin.partials.footer')
     </div>
+    <div class="d-none" data-admin-realtime data-realtime-channel="{{ app(\App\Services\Realtime\RealtimeChannelService::class)->adminDashboardChannel() }}"></div>
+    @stack('scripts')
 </body>
 </html>

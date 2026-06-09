@@ -4,13 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
+use App\Traits\BuildsPublicStorageUrls;
 
 /**
  * Uploaded file attached to a session.
  */
 class TeacherSessionFile extends Model
 {
+    use BuildsPublicStorageUrls;
+
     /**
      * Mass assignable attributes.
      *
@@ -43,7 +45,7 @@ class TeacherSessionFile extends Model
      */
     public function getFileUrlAttribute(): string
     {
-        return Storage::disk('public')->url($this->file_path);
+        return $this->publicStorageUrl($this->file_path);
     }
 
     /**

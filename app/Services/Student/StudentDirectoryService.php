@@ -6,6 +6,7 @@ use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\TeacherAvailability;
 use App\Models\TeacherSubject;
+use App\Services\Teacher\TeacherPresenceService;
 use App\Services\Teacher\TeacherSubjectService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -16,6 +17,11 @@ use Illuminate\Support\Collection;
  */
 class StudentDirectoryService
 {
+    public function __construct(
+        private readonly TeacherPresenceService $presence,
+    ) {
+    }
+
     /**
      * Directory cards for teachers relevant to the student level.
      *
@@ -23,7 +29,7 @@ class StudentDirectoryService
      */
     public function listTeachers(Student $student): EloquentCollection
     {
-        return Teacher::query()
+        $teachers = Teacher::query()
             ->with([
                 'subjects' => fn ($query) => $query
                     ->where('level', $student->study_level)
@@ -32,10 +38,17 @@ class StudentDirectoryService
                     ->where('is_booked', false)
                     ->orderBy('day_of_week')
                     ->orderBy('starts_at'),
+                'liveRequests' => fn ($query) => $query->where('status', 'pending'),
+                'sessions' => fn ($query) => $query
+                    ->where('booking_type', 'instant')
+                    ->whereIn('status', ['upcoming', 'in_progress']),
             ])
             ->whereHas('subjects', fn ($query) => $query->where('level', $student->study_level))
             ->latest()
-            ->get();
+            ->get()
+            ->each(fn (Teacher $teacher) => $this->decorateInstantAvailability($teacher));
+
+        return $teachers;
     }
 
     /**
@@ -69,11 +82,24 @@ class StudentDirectoryService
                     ->orderBy('day_of_week')
                     ->orderBy('starts_at'),
                 'sessions' => fn ($query) => $query
-                    ->where('status', 'upcoming')
+                    ->where(function ($sessionQuery): void {
+                        $sessionQuery
+                            ->where('status', 'upcoming')
+                            ->orWhere(function ($instantQuery): void {
+                                $instantQuery
+                                    ->where('booking_type', 'instant')
+                                    ->whereIn('status', ['upcoming', 'in_progress']);
+                            });
+                    })
                     ->orderBy('scheduled_at'),
+                'liveRequests' => fn ($query) => $query->where('status', 'pending'),
             ])
             ->whereHas('subjects', fn ($query) => $query->where('level', $student->study_level))
             ->findOrFail($teacherId);
+
+        $this->decorateInstantAvailability($teacher);
+
+        return $teacher;
     }
 
     /**
@@ -240,5 +266,18 @@ class StudentDirectoryService
         }
 
         return $maxDuration;
+    }
+
+    private function decorateInstantAvailability(Teacher $teacher): void
+    {
+        $canReceiveInstant = $teacher->is_accepting_instant_sessions
+            && $this->presence->isOnline($teacher)
+            && $teacher->liveRequests->isEmpty()
+            && $teacher->sessions
+                ->where('booking_type', 'instant')
+                ->whereIn('status', ['upcoming', 'in_progress'])
+                ->isEmpty();
+
+        $teacher->setAttribute('is_accepting_instant_sessions', $canReceiveInstant);
     }
 }

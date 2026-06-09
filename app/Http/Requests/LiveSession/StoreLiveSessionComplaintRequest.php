@@ -27,6 +27,7 @@ class StoreLiveSessionComplaintRequest extends FormRequest
         return [
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'min:5', 'max:5000'],
+            'attachment' => ['nullable', 'image', 'max:5120'],
         ];
     }
 }

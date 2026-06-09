@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Teacher;
 use App\Http\Controllers\Controller;
 use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Teacher\TeacherInstantSessionService;
+use App\Services\Teacher\TeacherPresenceService;
 use App\Traits\ResolvesTeacherAuthentication;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +21,7 @@ class TeacherInstantSessionController extends Controller
     public function __construct(
         private readonly TeacherInstantSessionService $instantSessionService,
         private readonly LiveSessionRoomService $roomService,
+        private readonly TeacherPresenceService $presence,
     ) {
     }
 
@@ -77,6 +79,7 @@ class TeacherInstantSessionController extends Controller
     public function poll(Request $request): JsonResponse
     {
         $teacher = $this->authenticatedTeacher($request);
+        $this->presence->markOnline($teacher);
         $requests = $this->instantSessionService->pending($teacher);
         $activeSession = $this->roomService->joinCandidateForTeacher($teacher);
 
@@ -93,6 +96,28 @@ class TeacherInstantSessionController extends Controller
                 'accept_url' => route('teacher.instant.accept', $liveRequest->id),
                 'reject_url' => route('teacher.instant.reject', $liveRequest->id),
             ])->values(),
+        ]);
+    }
+
+    public function heartbeat(Request $request): JsonResponse
+    {
+        $teacher = $this->authenticatedTeacher($request);
+        $this->presence->markOnline($teacher);
+
+        return response()->json([
+            'status' => 'ok',
+            'is_accepting_instant_sessions' => $teacher->fresh()->is_accepting_instant_sessions,
+        ]);
+    }
+
+    public function offline(Request $request): JsonResponse
+    {
+        $teacher = $this->authenticatedTeacher($request);
+        $updatedTeacher = $this->presence->markOffline($teacher);
+
+        return response()->json([
+            'status' => 'ok',
+            'is_accepting_instant_sessions' => $updatedTeacher->is_accepting_instant_sessions,
         ]);
     }
 }

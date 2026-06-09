@@ -20,7 +20,13 @@
                                     <h3 class="h5 fw-bold mb-0">{{ $subject->name }}</h3>
                                     <span class="teacher-chip teacher-chip-success">{{ $subject->level }}</span>
                                 </div>
+                                @php
+                                    $adminShare = (float) $subject->hourly_rate_syp * ((float) $adminCommissionPercentage / 100);
+                                    $teacherNet = (float) $subject->hourly_rate_syp - $adminShare;
+                                @endphp
                                 <div class="text-muted">سعر الساعة: {{ number_format($subject->hourly_rate_syp) }} ل.س</div>
+                                <div class="small text-success mt-2">ربحك الصافي: {{ number_format($teacherNet, 0) }} ل.س</div>
+                                <div class="small text-muted">نسبة الإدارة: {{ number_format((float) $adminCommissionPercentage, 2) }}% ({{ number_format($adminShare, 0) }} ل.س)</div>
                             </div>
                         </div>
                     @empty
@@ -36,7 +42,7 @@
             <div class="teacher-form-card teacher-mobile-card">
                 <div class="teacher-section-title mb-4">إضافة مادة جديدة</div>
 
-                <form action="{{ route('teacher.subjects.store') }}" method="POST" class="row g-3">
+                <form action="{{ route('teacher.subjects.store') }}" method="POST" class="row g-3" data-device-check-form data-teacher-subject-pricing data-admin-commission="{{ (float) $adminCommissionPercentage }}">
                     @csrf
                     <div class="col-12">
                         <label class="form-label fw-semibold">اسم المادة</label>
@@ -52,7 +58,19 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">سعر الساعة بالليرة السورية</label>
-                        <input type="number" name="hourly_rate_syp" value="{{ old('hourly_rate_syp') }}" class="form-control teacher-form-control" placeholder="100000" min="0" step="1">
+                        <input type="number" name="hourly_rate_syp" value="{{ old('hourly_rate_syp') }}" class="form-control teacher-form-control" placeholder="100000" min="0" step="1" data-hourly-rate-input>
+                    </div>
+                    <div class="col-12">
+                        <div class="teacher-media-card">
+                            <div class="d-flex justify-content-between gap-3 mb-2">
+                                <span>ربحك الصافي</span>
+                                <strong data-teacher-net-preview>0 ل.س</strong>
+                            </div>
+                            <div class="d-flex justify-content-between gap-3 text-muted small">
+                                <span>حصة الإدارة {{ number_format((float) $adminCommissionPercentage, 2) }}%</span>
+                                <span data-admin-share-preview>0 ل.س</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="col-12">
                         <button type="submit" class="btn teacher-btn-primary w-100">إضافة المادة</button>

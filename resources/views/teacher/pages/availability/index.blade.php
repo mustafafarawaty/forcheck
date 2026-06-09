@@ -39,7 +39,7 @@
             <div class="teacher-form-card teacher-mobile-card">
                 <div class="teacher-section-title mb-4">إضافة موعد جديد</div>
 
-                <form action="{{ route('teacher.availability.store') }}" method="POST" class="row g-3">
+                <form action="{{ route('teacher.availability.store') }}" method="POST" class="row g-3" data-device-check-form>
                     @csrf
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">اليوم</label>

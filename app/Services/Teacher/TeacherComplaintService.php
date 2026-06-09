@@ -24,8 +24,16 @@ class TeacherComplaintService
             ]);
         }
 
+        if (! empty($data['attachment'])) {
+            $data['attachment_path'] = $data['attachment']->store("complaints/teachers/{$teacher->id}", 'public');
+        }
+
+        unset($data['attachment']);
+
         return $teacher->complaints()->create([
             ...$data,
+            'submitted_by' => 'teacher',
+            'status' => $data['status'] ?? 'pending',
             'submitted_at' => now(),
         ]);
     }

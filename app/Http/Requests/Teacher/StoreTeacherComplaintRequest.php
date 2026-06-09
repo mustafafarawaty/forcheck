@@ -29,6 +29,7 @@ class StoreTeacherComplaintRequest extends FormRequest
             'teacher_session_id' => ['nullable', 'integer', Rule::exists('teacher_sessions', 'id')],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:2000'],
+            'attachment' => ['nullable', 'image', 'max:5120'],
         ];
     }
 }

@@ -6,7 +6,8 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BuildsPublicStorageUrls;
 
 /**
  * Student account with study level and related sessions.
@@ -18,12 +19,17 @@ use Illuminate\Support\Facades\Storage;
  * @property string $study_level
  * @property string|null $about
  * @property string|null $avatar_path
+ * @property float $balance
  * @property Collection<int, TeacherSession> $sessions
  * @property Collection<int, TeacherLiveRequest> $liveRequests
+     * @property Collection<int, WalletTransaction> $walletTransactions
+ * @property Collection<int, TeacherComplaint> $complaints
  */
 class Student extends Model
 {
+    use BuildsPublicStorageUrls;
     use HasFactory;
+    use SoftDeletes;
 
     /**
      * Mass assignable attributes.
@@ -37,6 +43,9 @@ class Student extends Model
         'study_level',
         'about',
         'avatar_path',
+        'disabled_at',
+        'disabled_reason',
+        'balance',
     ];
 
     /**
@@ -55,7 +64,14 @@ class Student extends Model
     {
         return [
             'password' => 'hashed',
+            'disabled_at' => 'datetime',
+            'balance' => 'decimal:2',
         ];
+    }
+
+    public function isDisabled(): bool
+    {
+        return $this->disabled_at !== null;
     }
 
     /**
@@ -67,7 +83,7 @@ class Student extends Model
             return null;
         }
 
-        return Storage::disk('public')->url($this->avatar_path);
+        return $this->publicStorageUrl($this->avatar_path);
     }
 
     /**
@@ -84,5 +100,18 @@ class Student extends Model
     public function liveRequests(): HasMany
     {
         return $this->hasMany(TeacherLiveRequest::class);
+    }
+
+    /**
+     * Student wallet movement history.
+     */
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(WalletTransaction::class)->latest('id');
+    }
+
+    public function complaints(): HasMany
+    {
+        return $this->hasMany(TeacherComplaint::class)->latest('id');
     }
 }

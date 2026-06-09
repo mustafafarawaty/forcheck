@@ -25,7 +25,10 @@ class StoreLiveSessionRecordingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'recording' => ['required', 'file', 'max:153600'],
+            'recording' => ['required_without:recording_finalize', 'file', 'max:1048576'],
+            'recording_chunk_index' => ['nullable', 'integer', 'min:0'],
+            'recording_is_last_chunk' => ['nullable', 'boolean'],
+            'recording_finalize' => ['nullable', 'boolean'],
         ];
     }
 }

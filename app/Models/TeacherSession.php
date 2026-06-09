@@ -6,13 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Storage;
+use App\Traits\BuildsPublicStorageUrls;
 
 /**
  * Stored teaching session with status, media and optional cancellation.
  */
 class TeacherSession extends Model
 {
+    use BuildsPublicStorageUrls;
+
     /**
      * Mass assignable attributes.
      *
@@ -35,9 +37,14 @@ class TeacherSession extends Model
         'student_joined_at',
         'join_deadline_at',
         'confirmation_deadline_at',
+        'teacher_read_at',
+        'admin_read_at',
         'last_reminder_sent_at',
         'duration_hours',
         'price',
+        'admin_commission_percentage',
+        'admin_commission_amount',
+        'teacher_earning_amount',
         'notes',
         'teacher_private_notes',
         'student_summary_notes',
@@ -45,6 +52,10 @@ class TeacherSession extends Model
         'recording_expires_at',
         'chat_excerpt',
         'cancellation_reason',
+        'payment_status',
+        'wallet_held_at',
+        'settled_at',
+        'disputed_at',
     ];
 
     /**
@@ -64,10 +75,18 @@ class TeacherSession extends Model
             'teacher_confirmed_at' => 'datetime',
             'student_confirmed_at' => 'datetime',
             'confirmation_deadline_at' => 'datetime',
+            'teacher_read_at' => 'datetime',
+            'admin_read_at' => 'datetime',
             'last_reminder_sent_at' => 'datetime',
             'recording_expires_at' => 'datetime',
+            'wallet_held_at' => 'datetime',
+            'settled_at' => 'datetime',
+            'disputed_at' => 'datetime',
             'duration_hours' => 'integer',
             'price' => 'decimal:2',
+            'admin_commission_percentage' => 'decimal:2',
+            'admin_commission_amount' => 'decimal:2',
+            'teacher_earning_amount' => 'decimal:2',
         ];
     }
 
@@ -98,7 +117,7 @@ class TeacherSession extends Model
             return $this->recording_url;
         }
 
-        return Storage::disk('public')->url($this->recording_url);
+        return $this->publicStorageUrl($this->recording_url);
     }
 
     /**
@@ -155,5 +174,13 @@ class TeacherSession extends Model
     public function signals(): HasMany
     {
         return $this->hasMany(TeacherSessionSignal::class)->latest('id');
+    }
+
+    /**
+     * Wallet transactions linked to this session.
+     */
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(WalletTransaction::class, 'teacher_session_id')->latest('id');
     }
 }

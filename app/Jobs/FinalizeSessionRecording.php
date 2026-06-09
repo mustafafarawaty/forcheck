@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Models\TeacherSession;
+use App\Services\LiveSession\LiveSessionRoomService;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+
+class FinalizeSessionRecording implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $sessionId;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct(int $sessionId)
+    {
+        $this->sessionId = $sessionId;
+    }
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        $session = TeacherSession::find($this->sessionId);
+
+        if (! $session) {
+            Log::warning("FinalizeSessionRecording: session not found {$this->sessionId}");
+            return;
+        }
+
+        try {
+            $session->update([
+                'recording_url' => '#',
+                'recording_expires_at' => null,
+            ]);
+            Log::info("FinalizeSessionRecording: marked session {$this->sessionId} as commented recording");
+        } catch (\Throwable $e) {
+            Log::error("FinalizeSessionRecording failed for session {$this->sessionId}: {$e->getMessage()}");
+            throw $e;
+        }
+    }
+}

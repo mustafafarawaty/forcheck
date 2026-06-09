@@ -9,7 +9,7 @@
                 <button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body pt-3">
-                <form action="{{ route('student.sessions.book') }}" method="POST" class="row g-3" data-booking-mode-root>
+                <form action="{{ route('student.sessions.book') }}" method="POST" class="row g-3" data-booking-mode-root data-booking-preview-url="{{ route('student.sessions.book.preview') }}" data-device-check-form>
                     @csrf
                     <div class="col-12">
                         <label class="form-label fw-semibold">نوع الجلسة</label>

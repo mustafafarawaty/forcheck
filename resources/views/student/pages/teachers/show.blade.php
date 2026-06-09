@@ -35,7 +35,9 @@
                 @endif
                 <div class="d-flex flex-wrap gap-2">
                     @foreach($teacherProfile->subjects as $subject)
-                        <span class="student-chip student-chip-soft">{{ $subject->name }} - {{ \App\Services\Teacher\TeacherSubjectService::levelLabels()[$subject->level] ?? $subject->level }}</span>
+                        <span class="student-chip student-chip-soft">
+                            {{ $subject->name }} - {{ \App\Services\Teacher\TeacherSubjectService::levelLabels()[$subject->level] ?? $subject->level }} - {{ number_format((float) $subject->hourly_rate_syp, 0) }}/ساعة
+                        </span>
                     @endforeach
                 </div>
             </div>
@@ -70,10 +72,17 @@
         <div class="col-xl-5">
             <div class="student-list-card student-mobile-card">
                 <div class="student-section-title mb-3">فورم حجز الجلسة</div>
-                <form action="{{ route('student.teachers.book', $teacherProfile->id) }}" method="POST" class="row g-3" data-booking-mode-root>
+                <form action="{{ route('student.teachers.book', $teacherProfile->id) }}" method="POST" class="row g-3" data-booking-mode-root data-booking-preview-url="{{ route('student.sessions.book.preview') }}" data-device-check-form>
                     @csrf
+                    <input type="hidden" name="teacher_id" value="{{ $teacherProfile->id }}">
                     <input type="hidden" name="teacher_availability_id" value="{{ $availableSlots->first()['availability_id'] ?? '' }}" data-availability-hidden>
                     <input type="hidden" name="scheduled_slot_at" value="{{ $availableSlots->first()['starts_at'] ?? '' }}" data-slot-hidden>
+                    <input
+                        type="hidden"
+                        data-booking-balance-check
+                        data-student-balance="{{ (float) ($currentStudent->balance ?? 0) }}"
+                        data-subject-rates='@json($teacherProfile->subjects->mapWithKeys(fn ($subject) => [$subject->name => (float) $subject->hourly_rate_syp]))'
+                    >
                     <div class="col-12">
                         <label class="form-label fw-semibold">نوع الجلسة</label>
                         <div class="student-choice-group">
@@ -95,9 +104,9 @@
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold">المادة</label>
-                        <select name="subject_name" class="form-select student-form-select">
+                        <select name="subject_name" class="form-select student-form-select" data-booking-subject>
                             @foreach($teacherProfile->subjects as $subject)
-                                <option value="{{ $subject->name }}">{{ $subject->name }}</option>
+                                <option value="{{ $subject->name }}">{{ $subject->name }} - {{ number_format((float) $subject->hourly_rate_syp, 0) }} / ساعة</option>
                             @endforeach
                         </select>
                     </div>
@@ -121,7 +130,7 @@
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label fw-semibold">عدد الساعات</label>
-                                    <select name="duration_hours" class="form-select student-form-select" data-slot-duration>
+                                    <select name="duration_hours" class="form-select student-form-select" data-slot-duration data-booking-duration>
                                         @foreach($durationOptions as $durationOption)
                                             <option value="{{ $durationOption }}">{{ $durationOption }} ساعة</option>
                                         @endforeach
@@ -132,11 +141,22 @@
                         </div>
                     </div>
                     <div class="col-12">
+                        <div class="student-inline-warning d-none" data-booking-balance-warning></div>
+                        <div class="student-list-card mt-2" data-booking-balance-summary>
+                            <div class="small text-muted mb-2">ملخص التكلفة</div>
+                            <div class="d-flex flex-wrap justify-content-between gap-2">
+                                <span>سعر الساعة: <strong data-booking-hourly-rate>0</strong></span>
+                                <span>إجمالي الجلسة: <strong data-booking-total>0</strong></span>
+                                <span>رصيدك الحالي: <strong data-booking-current-balance>{{ number_format((float) ($currentStudent->balance ?? 0), 0) }}</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
                         <label class="form-label fw-semibold">ملاحظة</label>
                         <textarea name="note" rows="4" class="form-control student-form-control" placeholder="مثلاً: أحتاج جلسة مراجعة لموضوع معين"></textarea>
                     </div>
                     <div class="col-12">
-                        <button type="submit" class="btn student-btn-primary w-100" @disabled($availableSlots->isEmpty() && ! $teacherProfile->is_accepting_instant_sessions)>
+                        <button type="submit" class="btn student-btn-primary w-100" data-booking-submit @disabled($availableSlots->isEmpty() && ! $teacherProfile->is_accepting_instant_sessions)>
                             تأكيد الحجز مع الأستاذ
                         </button>
                     </div>

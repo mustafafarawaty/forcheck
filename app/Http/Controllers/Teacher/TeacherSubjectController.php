@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teacher\StoreTeacherSubjectRequest;
+use App\Services\AppSettingsService;
 use App\Services\Teacher\TeacherSubjectService;
 use App\Traits\ResolvesTeacherAuthentication;
 use Illuminate\Contracts\View\View;
@@ -19,6 +20,7 @@ class TeacherSubjectController extends Controller
 
     public function __construct(
         private readonly TeacherSubjectService $subjectService,
+        private readonly AppSettingsService $settings,
     ) {
     }
 
@@ -32,6 +34,7 @@ class TeacherSubjectController extends Controller
         return view('teacher.pages.subjects.index', [
             'subjects' => $teacher->subjects()->latest()->get(),
             'allowedLevels' => $this->subjectService->allowedLevelsForTeacher($teacher),
+            'adminCommissionPercentage' => $this->settings->adminCommissionPercentage(),
         ]);
     }
 

@@ -29,7 +29,7 @@ class StudentDashboardService
 
         $sessions = $student->sessions()
             ->with(['teacher', 'subject'])
-            ->orderByDesc('scheduled_at')
+            ->orderByDesc('created_at')
             ->get();
         $sessions = $this->expireUpcomingSessions($sessions);
 

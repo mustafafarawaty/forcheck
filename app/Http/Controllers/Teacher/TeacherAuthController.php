@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Teacher\TeacherLoginRequest;
 use App\Http\Requests\Teacher\TeacherRegisterRequest;
 use App\Services\Teacher\TeacherAuthService;
+use App\Services\Teacher\TeacherPresenceService;
 use App\Services\Teacher\TeacherSubjectService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -19,6 +20,7 @@ class TeacherAuthController extends Controller
     public function __construct(
         private readonly TeacherAuthService $authService,
         private readonly TeacherSubjectService $subjectService,
+        private readonly TeacherPresenceService $presence,
     ) {
     }
 
@@ -44,6 +46,12 @@ class TeacherAuthController extends Controller
             return back()
                 ->withInput($request->safe()->only('phone'))
                 ->withErrors(['phone' => 'بيانات الدخول غير صحيحة.']);
+        }
+
+        if ($teacher->isDisabled()) {
+            return back()
+                ->withInput($request->safe()->only('phone'))
+                ->withErrors(['phone' => 'الحساب معطل من قبل الإدارة. يرجى التواصل مع الدعم لمراجعة الحالة.']);
         }
 
         $request->session()->regenerate();
@@ -84,6 +92,14 @@ class TeacherAuthController extends Controller
      */
     public function logout(): RedirectResponse
     {
+        if ($teacherId = session('teacher_id')) {
+            $teacher = \App\Models\Teacher::find($teacherId);
+
+            if ($teacher) {
+                $this->presence->markOffline($teacher);
+            }
+        }
+
         session()->forget('teacher_id');
         session()->invalidate();
         session()->regenerateToken();

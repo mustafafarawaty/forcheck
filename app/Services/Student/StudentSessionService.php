@@ -4,9 +4,11 @@ namespace App\Services\Student;
 
 use App\Models\Student;
 use App\Models\TeacherSession;
+use App\Models\TeacherLiveRequest;
 use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Realtime\RealtimeUpdateService;
-use Illuminate\Database\Eloquent\Collection;
+use App\Services\Wallet\WalletService;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -18,23 +20,24 @@ class StudentSessionService
     public function __construct(
         private readonly LiveSessionRoomService $roomService,
         private readonly RealtimeUpdateService $realtime,
+        private readonly WalletService $wallets,
     ) {
     }
 
     /**
      * List sessions for student.
      *
-     * @return Collection<int, TeacherSession>
+     * @return LengthAwarePaginator<int, TeacherSession>
      */
-    public function list(Student $student): Collection
+    public function list(Student $student, int $perPage = 10): LengthAwarePaginator
     {
         $this->roomService->syncOwnedStudentSessions($student);
         $this->cancelExpiredUpcomingSessions($student);
 
         return $student->sessions()
-            ->with(['teacher', 'subject', 'complaints', 'files'])
-            ->orderByDesc('scheduled_at')
-            ->get();
+            ->with(['teacher', 'subject', 'complaints', 'files', 'walletTransactions'])
+            ->orderByDesc('created_at')
+            ->paginate($perPage);
     }
 
     /**
@@ -54,7 +57,7 @@ class StudentSessionService
             'student_confirmed_at' => now(),
         ]);
 
-        $updatedSession = $session->fresh(['teacher', 'student', 'subject', 'complaints', 'files']);
+        $updatedSession = $session->fresh(['teacher', 'student', 'subject', 'complaints', 'files', 'walletTransactions']);
         $this->realtime->broadcastSessionParticipants($updatedSession);
 
         return $updatedSession;
@@ -63,7 +66,7 @@ class StudentSessionService
     /**
      * Cancel an upcoming session by the student.
      */
-    public function cancel(Student $student, int $sessionId): TeacherSession
+    public function cancel(Student $student, int $sessionId, ?string $reason = null): TeacherSession
     {
         $session = $student->sessions()->findOrFail($sessionId);
 
@@ -75,10 +78,13 @@ class StudentSessionService
 
         $session->update([
             'status' => 'cancelled',
-            'cancellation_reason' => $session->cancellation_reason ?: 'تم إلغاء الجلسة من قبل الطالب.',
+            'cancellation_reason' => $reason ?: 'تم إلغاء الجلسة من قبل الطالب.',
         ]);
 
-        $updatedSession = $session->fresh(['teacher', 'student', 'subject', 'complaints', 'files']);
+        $this->wallets->refundHeldSessionAmount($session);
+        $this->cancelRelatedLiveRequest($session);
+
+        $updatedSession = $session->fresh(['teacher', 'student', 'subject', 'complaints', 'files', 'walletTransactions']);
         $this->realtime->broadcastSessionParticipants($updatedSession);
 
         return $updatedSession;
@@ -101,11 +107,24 @@ class StudentSessionService
                     ?? $session->scheduled_at->copy()->addHours((int) ($session->duration_hours ?: 1));
 
                 if ($sessionEnd->lessThanOrEqualTo(Carbon::now())) {
+                    $this->wallets->refundHeldSessionAmount($session);
+
                     $session->update([
                         'status' => 'cancelled',
                         'cancellation_reason' => $session->cancellation_reason ?: 'تم إلغاء الجلسة تلقائيًا لانتهاء وقتها دون إتمام.',
                     ]);
                 }
             });
+    }
+
+    private function cancelRelatedLiveRequest(TeacherSession $session): void
+    {
+        TeacherLiveRequest::query()
+            ->where('teacher_session_id', $session->id)
+            ->where('status', 'accepted')
+            ->update([
+                'status' => 'cancelled',
+                'responded_at' => now(),
+            ]);
     }
 }

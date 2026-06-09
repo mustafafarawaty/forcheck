@@ -34,6 +34,20 @@ class EnsureTeacherAuthenticated
             return redirect()->route('teacher.login');
         }
 
+        if ($teacher->isDisabled()) {
+            $request->session()->forget('teacher_id');
+
+            return redirect()
+                ->route('teacher.login')
+                ->withErrors(['phone' => 'الحساب معطل من قبل الإدارة. يرجى التواصل مع الدعم لمراجعة الحالة.']);
+        }
+
+        if (! in_array($request->method(), ['GET', 'HEAD', 'OPTIONS'], true) && ! $request->routeIs('teacher.logout') && ! $teacher->isApproved()) {
+            return back()->withErrors(['account' => 'حساب الأستاذ قيد المراجعة من الإدارة. يمكنك استكشاف اللوحة، لكن الإجراءات غير مفعلة حتى تتم الموافقة.']);
+        }
+
+        app(\App\Services\Teacher\TeacherPresenceService::class)->markOnline($teacher);
+
         $request->attributes->set('authenticatedTeacher', $teacher);
 
         return $next($request);

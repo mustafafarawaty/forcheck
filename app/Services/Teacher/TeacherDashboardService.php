@@ -27,7 +27,7 @@ class TeacherDashboardService
     {
         $this->roomService->syncOwnedTeacherSessions($teacher);
 
-        $sessions = $teacher->sessions()->with('subject')->orderByDesc('scheduled_at')->get();
+        $sessions = $teacher->sessions()->with('subject')->orderByDesc('created_at')->get();
         $sessions = $this->expireUpcomingSessions($sessions);
         $now = Carbon::now();
         $monthStart = $now->copy()->startOfMonth();
@@ -57,7 +57,7 @@ class TeacherDashboardService
             'stats' => [
                 'sessions_count' => $monthSessions->count(),
                 'students_count' => $monthSessions->pluck('student_name')->unique()->count(),
-                'monthly_profit' => (float) $completedMonthSessions->sum('price'),
+                'monthly_profit' => (float) $completedMonthSessions->sum('teacher_earning_amount'),
                 'upcoming_count' => $sessions->where('status', 'upcoming')->count(),
             ],
             'today_sessions' => $todaySessions,
@@ -157,7 +157,7 @@ class TeacherDashboardService
                 'W' => 'أ' . ($index + 1),
                 default => $periodStart->translatedFormat('M'),
             };
-            $profits[] = (float) $bucket->where('status', 'completed')->sum('price');
+            $profits[] = (float) $bucket->where('status', 'completed')->sum('teacher_earning_amount');
             $counts[] = $bucket->count();
         }
 

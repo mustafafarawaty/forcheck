@@ -10,13 +10,21 @@
                 <h2 class="display-6 fw-bold mb-3">مساحة عملية تركز على الحجز السريع ومتابعة جلساتك بدون تعقيد.</h2>
                 <p class="mb-4 text-white-50 fs-5">احجز جلستك القادمة، راقب تقدمك، وادخل مباشرة إلى الأساتذة أو جلساتك من مكان واحد.</p>
                 <div class="d-flex flex-wrap gap-2">
-                    <a
-                        href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                        class="btn btn-light {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                        data-quick-join-button="student"
-                    >
-                        الانضمام السريع للجلسة
-                    </a>
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <a
+                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
+                            class="btn btn-light {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
+                            data-quick-join-button="student"
+                        >
+                            الانضمام السريع للجلسة
+                        </a>
+                        @if($activeSessionPayload && $activeSessionPayload['id'])
+                            <form action="{{ route('student.sessions.cancel', $activeSessionPayload['id']) }}" method="POST" class="m-0">
+                                @csrf
+                                <button type="submit" class="btn btn-outline-danger d-none d-sm-inline-block">إلغاء الجلسة</button>
+                            </form>
+                        @endif
+                    </div>
                     <a href="{{ route('student.teachers.index') }}" class="student-btn-soft">استعرض الأساتذة</a>
                     <a href="{{ route('student.sessions.index') }}" class="student-btn-soft">جلساتي</a>
                 </div>
@@ -32,13 +40,21 @@
                             @endif
                         </div>
                         <div class="text-white-50 mb-3" data-quick-join-time="student">{{ $activeSessionPayload['scheduled_at_label'] ?? '' }}</div>
-                        <a
-                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                            class="btn btn-light w-100 mb-4 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                            data-quick-join-button="student"
-                        >
-                            الانضمام الآن
-                        </a>
+                        <div class="d-flex flex-column gap-2">
+                            <a
+                                href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
+                                class="btn btn-light w-100 mb-4 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
+                                data-quick-join-button="student"
+                            >
+                                الانضمام الآن
+                            </a>
+                            @if($activeSessionPayload && $activeSessionPayload['id'])
+                                <form action="{{ route('student.sessions.cancel', $activeSessionPayload['id']) }}" method="POST" class="m-0">
+                                    @csrf
+                                    <button type="submit" class="btn btn-outline-danger w-100">إلغاء الجلسة</button>
+                                </form>
+                            @endif
+                        </div>
                     </div>
                     <div class="fw-bold fs-5 mb-3">خطوات سريعة</div>
                     <div class="student-quick-points">

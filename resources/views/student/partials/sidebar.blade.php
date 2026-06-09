@@ -30,6 +30,16 @@
             <i class="fas fa-video"></i>
             <span>جلساتي</span>
         </a>
+        <a href="{{ route('student.wallet.index') }}" class="student-menu-link {{ request()->routeIs('student.wallet.*') ? 'active' : '' }}">
+            <i class="fas fa-wallet"></i>
+            <span class="student-menu-badge badge text-bg-danger {{ ($studentUnreadCounts['wallet'] ?? 0) > 0 ? '' : 'd-none' }}" data-dashboard-role="student" data-dashboard-badge="wallet">{{ $studentUnreadCounts['wallet'] ?? 0 }}</span>
+            <span>حركة الرصيد</span>
+        </a>
+        <a href="{{ route('student.complaints.index') }}" class="student-menu-link {{ request()->routeIs('student.complaints.*') ? 'active' : '' }}">
+            <i class="fas fa-shield-heart"></i>
+            <span class="student-menu-badge badge text-bg-danger {{ ($studentUnreadCounts['complaints'] ?? 0) > 0 ? '' : 'd-none' }}" data-dashboard-role="student" data-dashboard-badge="complaints">{{ $studentUnreadCounts['complaints'] ?? 0 }}</span>
+            <span>الشكاوى</span>
+        </a>
         <a href="{{ route('student.profile.edit') }}" class="student-menu-link {{ request()->routeIs('student.profile.*') ? 'active' : '' }}">
             <i class="fas fa-id-card"></i>
             <span>الملف الشخصي</span>

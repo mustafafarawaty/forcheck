@@ -20,17 +20,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeThemeToggle();
     initializeGlobalModals();
+    initializePageToasts();
     initializeTeacherChart();
     initializeStudentChart();
     initializePhoneInputs();
     initializeBookingModeForms();
+    initializeTeacherLiveAvailabilitySwitches();
+    initializeTeacherLivePresence();
+    initializeDeviceCheckForms();
+    initializeJoinSessionLinks();
     initializeTeacherSlotPicker();
+    initializeTeacherSubjectPricing();
+    initializeBookingBalanceChecks();
+    initializeWalletForms();
     (runtime.initializeTeacherSessionPanel || initializeTeacherSessionPanel)();
+    (runtime.initializeAdminRealtime || initializeAdminRealtime)();
     (runtime.initializeStudentSessionPanel || initializeStudentSessionPanel)();
     (runtime.initializeTeacherLivePolling || initializeTeacherLivePolling)();
     (runtime.initializeTeacherRealtime || initializeTeacherRealtime)();
     (runtime.initializeStudentRealtime || initializeStudentRealtime)();
     (runtime.initializeJoinSessionPrompts || initializeJoinSessionPrompts)();
+    (runtime.initializeBookingResult || initializeBookingResult)();
     initializeVideoCallPage();
     (runtime.initializeLiveSessionRoom || initializeLiveSessionRoom)();
 });
@@ -38,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeGlobalModals() {
     const modalIds = [
         'studentBookingModal',
+        'studentWalletDepositModal',
+        'studentWalletWithdrawModal',
+        'teacherWalletWithdrawModal',
         'studentCancelSessionModal',
         'teacherJoinSessionPrompt',
         'studentJoinSessionPrompt',
@@ -116,6 +129,353 @@ function safeJsonParse(value, fallback = {}) {
     }
 }
 
+async function findMediaInputs() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+        return { supported: false, hasAudio: false, hasVideo: false };
+    }
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        return {
+            supported: true,
+            hasAudio: devices.some(device => device.kind === 'audioinput'),
+            hasVideo: devices.some(device => device.kind === 'videoinput'),
+        };
+    } catch (error) {
+        return { supported: false, hasAudio: false, hasVideo: false };
+    }
+}
+
+function getMediaMissingMessage(status, actionName = 'هذا الإجراء') {
+    if (!status.supported) {
+        return `لا يمكن التحقق من وجود الكاميرا أو الميكروفون على هذا المتصفح. حاول استخدام متصفح حديث أو التأكد من ضبط الإعدادات.`;
+    }
+
+    if (!status.hasAudio && !status.hasVideo) {
+        return `لا يوجد مايك أو كاميرا متاحين. استخدم جهازاً بميكروفون وكاميرا قبل متابعة ${actionName}.`;
+    }
+
+    if (!status.hasAudio) {
+        return `لا يوجد مايك متاح. استخدم جهازاً يحتوي على مايك قبل متابعة ${actionName}.`;
+    }
+
+    if (!status.hasVideo) {
+        return `لا توجد كاميرا متاحة. استخدم جهازاً يحتوي على كاميرا قبل متابعة ${actionName}.`;
+    }
+
+    return null;
+}
+
+async function ensureMediaInputsForAction(actionName = 'هذا الإجراء') {
+    const status = await findMediaInputs();
+    const message = getMediaMissingMessage(status, actionName);
+
+    if (message) {
+        showAppToast(message, 'danger');
+        return false;
+    }
+
+    return true;
+}
+
+function initializeTeacherSubjectPricing() {
+    document.querySelectorAll('[data-teacher-subject-pricing]').forEach(form => {
+        const input = form.querySelector('[data-hourly-rate-input]');
+        const netPreview = form.querySelector('[data-teacher-net-preview]');
+        const adminPreview = form.querySelector('[data-admin-share-preview]');
+        const commission = Number(form.dataset.adminCommission || 0);
+        const formatAmount = value => `${Math.max(0, value).toLocaleString('ar-SY', { maximumFractionDigits: 0 })} ل.س`;
+
+        const render = () => {
+            const gross = Number(input?.value || 0);
+            const adminShare = gross * (commission / 100);
+            const net = gross - adminShare;
+
+            if (netPreview) {
+                netPreview.textContent = formatAmount(net);
+            }
+
+            if (adminPreview) {
+                adminPreview.textContent = formatAmount(adminShare);
+            }
+        };
+
+        input?.addEventListener('input', render);
+        render();
+    });
+}
+
+function ensureBookingConfirmModal() {
+    let modal = document.getElementById('studentBookingConfirmModal');
+
+    if (modal) {
+        return modal;
+    }
+
+    modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.id = 'studentBookingConfirmModal';
+    modal.tabIndex = -1;
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content student-modal-card">
+                <div class="modal-header border-0 pb-0">
+                    <h2 class="h5 fw-bold mb-0" data-booking-confirm-title>تأكيد الحجز</h2>
+                    <button type="button" class="btn-close ms-0 me-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-3">
+                    <p class="mb-3" data-booking-confirm-message></p>
+                    <div class="student-list-card mb-4">
+                        <div class="d-flex flex-column gap-2 small">
+                            <div class="d-flex justify-content-between gap-3">
+                                <span class="text-muted">الأستاذ</span>
+                                <strong data-booking-confirm-teacher></strong>
+                            </div>
+                            <div class="d-flex justify-content-between gap-3">
+                                <span class="text-muted">سعر الساعة</span>
+                                <strong data-booking-confirm-rate></strong>
+                            </div>
+                            <div class="d-flex justify-content-between gap-3">
+                                <span class="text-muted">إجمالي التكلفة</span>
+                                <strong data-booking-confirm-total></strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn student-btn-soft" data-bs-dismiss="modal">إلغاء</button>
+                        <button type="button" class="btn student-btn-primary" data-booking-confirm-submit>تأكيد الحجز</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    return modal;
+}
+
+function showBookingConfirmModal(preview, onConfirm) {
+    const modalElement = ensureBookingConfirmModal();
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    const formatAmount = value => `${Number(value || 0).toLocaleString('ar-SY', { maximumFractionDigits: 0 })} ل.س`;
+    const modeLabel = preview.mode === 'instant' ? 'تم إيجاد أستاذ متاح للحجز المباشر.' : 'سيتم حجز الموعد حسب الاختيار.';
+
+    modalElement.querySelector('[data-booking-confirm-message]').textContent = `${modeLabel} تكلفة الساعة ${formatAmount(preview.hourly_rate)}.`;
+    modalElement.querySelector('[data-booking-confirm-teacher]').textContent = preview.teacher_name || 'أستاذ متاح';
+    modalElement.querySelector('[data-booking-confirm-rate]').textContent = formatAmount(preview.hourly_rate);
+    modalElement.querySelector('[data-booking-confirm-total]').textContent = formatAmount(preview.total);
+
+    const submitButton = modalElement.querySelector('[data-booking-confirm-submit]');
+    const nextSubmitButton = submitButton.cloneNode(true);
+    submitButton.replaceWith(nextSubmitButton);
+    nextSubmitButton.addEventListener('click', () => {
+        modal.hide();
+        onConfirm();
+    });
+
+    modal.show();
+}
+
+function syncPreviewTeacher(form, preview) {
+    if (!preview.teacher_id) {
+        return;
+    }
+
+    let teacherInput = form.querySelector('input[name="teacher_id"]');
+
+    if (!teacherInput) {
+        teacherInput = document.createElement('input');
+        teacherInput.type = 'hidden';
+        teacherInput.name = 'teacher_id';
+        form.appendChild(teacherInput);
+    }
+
+    teacherInput.value = String(preview.teacher_id);
+}
+
+async function submitConfirmedForm(form) {
+    const submitUrl = form.action;
+    const submitButton = form.querySelector('button[type="submit"]');
+
+    if (!submitUrl || !window.fetch) {
+        form.dataset.bookingCostConfirmHandled = '1';
+
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return;
+        }
+
+        form.submit();
+        return;
+    }
+
+    submitButton?.setAttribute('disabled', 'disabled');
+
+    try {
+        const response = await fetch(submitUrl, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+            body: new FormData(form),
+        });
+
+        const payload = await response.json().catch(() => null);
+
+        if (response.ok && payload?.status === 'ok') {
+            if (payload.redirect_url) {
+                window.location.assign(payload.redirect_url);
+                return;
+            }
+
+            showAppToast(payload.message || 'تم الحجز بنجاح.', 'success');
+
+            // Close booking modal if open
+            const bookingModalEl = document.getElementById('studentBookingModal');
+            if (bookingModalEl) {
+                bootstrap.Modal.getOrCreateInstance(bookingModalEl).hide();
+            }
+
+            if (payload.popup) {
+                const prompt = document.getElementById('studentJoinSessionPrompt');
+
+                if (prompt) {
+                    applyJoinPromptPayload(prompt, payload.popup, { forceShow: true });
+                }
+            }
+
+            // Optionally refresh parts of the page or poll state
+            return;
+        }
+
+        const msg = payload?.message || (payload?.errors ? Object.values(payload.errors).flat()[0] : 'تعذر إتمام الحجز.');
+        showAppToast(msg, 'danger');
+    } catch (error) {
+        // Fallback to normal submit if network/error
+        try {
+            form.dataset.bookingCostConfirmHandled = '1';
+
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+                return;
+            }
+
+            form.submit();
+        } catch (e) {
+            showAppToast('تعذر إتمام الحجز. حاول مجددا.', 'danger');
+        }
+    } finally {
+        submitButton?.removeAttribute('disabled');
+    }
+}
+
+async function requestBookingConfirmation(form, fallbackPreview = null) {
+    const previewUrl = form.dataset.bookingPreviewUrl;
+
+    if (!previewUrl) {
+        if (fallbackPreview) {
+            showBookingConfirmModal(fallbackPreview, () => {
+                submitConfirmedForm(form);
+            });
+        }
+
+        return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton?.setAttribute('disabled', 'disabled');
+
+    try {
+        const response = await fetch(previewUrl, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                Accept: 'application/json',
+            },
+            body: new FormData(form),
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            const errors = payload?.errors ? Object.values(payload.errors).flat() : [];
+            const serverMessage = payload?.message || errors[0];
+
+            if (serverMessage) {
+                showAppToast(serverMessage, 'danger');
+                return;
+            }
+
+            // If no JSON message is present, try to show a fallback with HTTP status
+            showAppToast(`تعذر تجهيز الحجز الآن. (${response.status})`, 'danger');
+            return;
+        }
+
+        if (!payload.can_afford) {
+            showAppToast(`رصيدك الحالي لا يكفي. المطلوب ${Math.round(payload.total || 0)} والمتوفر ${Math.round(payload.balance || 0)}.`, 'danger');
+            return;
+        }
+
+        showBookingConfirmModal(payload, () => {
+            syncPreviewTeacher(form, payload);
+            submitConfirmedForm(form);
+        });
+    } catch (error) {
+        showAppToast('تعذر تجهيز الحجز الآن. حاول مجددا.', 'danger');
+    } finally {
+        submitButton?.removeAttribute('disabled');
+    }
+}
+
+function ensureToastRoot() {
+    let root = document.querySelector('[data-app-toast-root]');
+
+    if (root) {
+        return root;
+    }
+
+    root = document.createElement('div');
+    root.setAttribute('data-app-toast-root', '1');
+    root.className = 'app-toast-root';
+    document.body.appendChild(root);
+
+    return root;
+}
+
+function showAppToast(message, type = 'danger', duration = 3500) {
+    if (!message) {
+        return;
+    }
+
+    const root = ensureToastRoot();
+    const toast = document.createElement('div');
+    toast.className = `app-toast app-toast-${type}`;
+    toast.textContent = message;
+    root.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('is-visible');
+    });
+
+    window.setTimeout(() => {
+        toast.classList.remove('is-visible');
+        window.setTimeout(() => toast.remove(), 220);
+    }, duration);
+}
+
+function initializePageToasts() {
+    document.querySelectorAll('[data-page-toast]').forEach(node => {
+        const message = node.dataset.toastMessage;
+        const type = node.dataset.toastType || 'danger';
+
+        if (message) {
+            showAppToast(message, type);
+        }
+    });
+}
+
 function sessionEndTimestamp(payload) {
     const explicitEnd = payload?.planned_end_at_iso || payload?.planned_end_at;
     const durationHours = Number(payload?.duration_hours || 1);
@@ -140,6 +500,10 @@ function payloadCanJoinNow(payload) {
         return false;
     }
 
+    if (payload.can_join_now) {
+        return true;
+    }
+
     if (payload.status === 'cancelled' || payload.status === 'completed') {
         return false;
     }
@@ -153,7 +517,7 @@ function payloadCanJoinNow(payload) {
     }
 
     if (!payload.scheduled_at_iso) {
-        return Boolean(payload.can_join_now);
+        return false;
     }
 
     const now = Date.now();
@@ -212,12 +576,13 @@ function joinPromptStorageKey(payload) {
     return `join-prompt-shown-${document.body.dataset.themeScope || 'app'}-${payload.id}`;
 }
 
-function applyJoinPromptPayload(prompt, payload) {
+function applyJoinPromptPayload(prompt, payload, options = {}) {
     if (!prompt) {
         return;
     }
 
     const normalized = normalizeJoinPayload(payload);
+    const forceShow = Boolean(options.forceShow);
     const summary = prompt.querySelector('[data-join-session-summary]');
     const time = prompt.querySelector('[data-join-session-time]');
     const link = prompt.querySelector('[data-join-session-link]');
@@ -252,7 +617,7 @@ function applyJoinPromptPayload(prompt, payload) {
     const showPrompt = () => {
         const storageKey = joinPromptStorageKey(normalized);
 
-        if (sessionStorage.getItem(storageKey)) {
+        if (!forceShow && sessionStorage.getItem(storageKey)) {
             return;
         }
 
@@ -335,20 +700,23 @@ function renderQuickJoinTargets(scope, payload) {
 }
 
 function initializeTeacherRealtime() {
-    const indicator = document.querySelector('[data-live-request-indicator]');
+    const liveIndicator = document.querySelector('[data-live-request-indicator]');
+    const dashboardIndicator = document.querySelector('[data-teacher-realtime]');
+    const indicator = liveIndicator || dashboardIndicator;
 
-    if (!indicator || !window.Echo) {
+    if (!indicator) {
         return;
     }
 
+    const isLiveIndicator = Boolean(liveIndicator);
     const prompt = document.getElementById('teacherJoinSessionPrompt');
     const realtimeChannel = indicator.dataset.realtimeChannel;
-    const countNode = indicator.querySelector('[data-live-request-count]');
-    const summaryNode = indicator.querySelector('[data-live-toast-summary]');
-    const metaNode = indicator.querySelector('[data-live-toast-meta]');
-    const acceptForm = indicator.querySelector('[data-live-accept-form]');
-    const rejectForm = indicator.querySelector('[data-live-reject-form]');
-    const requestCard = indicator.querySelector('[data-teacher-live-card]');
+    const countNode = liveIndicator?.querySelector('[data-live-request-count]') || null;
+    const summaryNode = liveIndicator?.querySelector('[data-live-toast-summary]') || null;
+    const metaNode = liveIndicator?.querySelector('[data-live-toast-meta]') || null;
+    const acceptForm = liveIndicator?.querySelector('[data-live-accept-form]') || null;
+    const rejectForm = liveIndicator?.querySelector('[data-live-reject-form]') || null;
+    const requestCard = liveIndicator?.querySelector('[data-teacher-live-card]') || null;
     const initialPayload = safeJsonParse(indicator.dataset.activeSession, null);
     const pollUrl = indicator.dataset.pollUrl;
 
@@ -376,7 +744,7 @@ function initializeTeacherRealtime() {
             .then(payload => {
                 applyActiveSessionPayload(payload?.active_session_payload ?? null);
 
-                if (!countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
+                if (!isLiveIndicator || !countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
                     return;
                 }
 
@@ -405,52 +773,61 @@ function initializeTeacherRealtime() {
             .catch(() => { });
     };
 
-    window.Echo.channel(realtimeChannel).listen('.teacher.realtime.updated', payload => {
-        const activeSessionPayload = payload?.active_session_payload
-            ?? joinPayloadFromSessionUpdate('teacher', payload?.session_update)
-            ?? null;
+    if (window.Echo) {
+        window.Echo.channel(realtimeChannel).listen('.teacher.realtime.updated', payload => {
+            const activeSessionPayload = payload?.active_session_payload
+                ?? joinPayloadFromSessionUpdate('teacher', payload?.session_update)
+                ?? null;
 
-        applyActiveSessionPayload(activeSessionPayload);
+            applyActiveSessionPayload(activeSessionPayload);
+            updateRealtimeBadgeCounts(payload);
 
-        if (payload?.session_update) {
-            updateSessionTriggerPayload('[data-session-trigger]', payload.session_update);
-        }
+            if (payload?.session_update) {
+                updateSessionTriggerPayload('[data-session-trigger]', payload.session_update);
+            }
 
-        if (!countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
-            return;
-        }
+            if (!isLiveIndicator) {
+                return;
+            }
 
-        const requestsPayload = payload?.live_requests ?? { count: 0, requests: [] };
-        countNode.textContent = String(requestsPayload.count || 0);
-        countNode.classList.toggle('d-none', !requestsPayload.count);
+            if (!countNode || !summaryNode || !metaNode || !acceptForm || !rejectForm || !requestCard) {
+                return;
+            }
 
-        if (!requestsPayload.count) {
-            requestCard.classList.add('d-none');
-            return;
-        }
+            const requestsPayload = payload?.live_requests ?? { count: 0, requests: [] };
+            countNode.textContent = String(requestsPayload.count || 0);
+            countNode.classList.toggle('d-none', !requestsPayload.count);
 
-        const latest = requestsPayload.requests?.[0];
+            if (!requestsPayload.count) {
+                requestCard.classList.add('d-none');
+                return;
+            }
 
-        if (!latest) {
-            requestCard.classList.add('d-none');
-            return;
-        }
+            const latest = requestsPayload.requests?.[0];
 
-        summaryNode.textContent = `${latest.student_name} طلب ${latest.subject_name}`;
-        metaNode.textContent = latest.requested_at || '';
-        acceptForm.action = latest.accept_url || '';
-        rejectForm.action = latest.reject_url || '';
-        requestCard.classList.remove('d-none');
-    });
+            if (!latest) {
+                requestCard.classList.add('d-none');
+                return;
+            }
 
-    pollActiveState();
-    window.setInterval(pollActiveState, 5000);
+            summaryNode.textContent = `${latest.student_name} طلب ${latest.subject_name}`;
+            metaNode.textContent = latest.requested_at || '';
+            acceptForm.action = latest.accept_url || '';
+            rejectForm.action = latest.reject_url || '';
+            requestCard.classList.remove('d-none');
+        });
+    }
+
+    if (pollUrl) {
+        pollActiveState();
+        window.setInterval(pollActiveState, 5000);
+    }
 }
 
 function initializeStudentRealtime() {
     const indicator = document.querySelector('[data-student-realtime]');
 
-    if (!indicator || !window.Echo) {
+    if (!indicator) {
         return;
     }
 
@@ -486,17 +863,26 @@ function initializeStudentRealtime() {
             .catch(() => { });
     };
 
-    window.Echo.channel(realtimeChannel).listen('.student.realtime.updated', payload => {
-        const activeSessionPayload = payload?.active_session_payload
-            ?? joinPayloadFromSessionUpdate('student', payload?.session_update)
-            ?? null;
+    if (window.Echo) {
+        window.Echo.channel(realtimeChannel).listen('.student.realtime.updated', payload => {
+            const activeSessionPayload = payload?.active_session_payload
+                ?? joinPayloadFromSessionUpdate('student', payload?.session_update)
+                ?? null;
 
-        applyActiveSessionPayload(activeSessionPayload);
+            applyActiveSessionPayload(activeSessionPayload);
+            updateRealtimeBadgeCounts(payload);
 
-        if (payload?.session_update) {
-            updateSessionTriggerPayload('[data-student-session-trigger]', payload.session_update);
-        }
-    });
+            if (payload?.live_request_update?.status === 'accepted' && activeSessionPayload) {
+                sessionStorage.removeItem(joinPromptStorageKey(activeSessionPayload));
+                applyJoinPromptPayload(prompt, activeSessionPayload, { forceShow: true });
+                pollActiveState();
+            }
+
+            if (payload?.session_update) {
+                updateSessionTriggerPayload('[data-student-session-trigger]', payload.session_update);
+            }
+        });
+    }
 
     pollActiveState();
     window.setInterval(pollActiveState, 5000);
@@ -515,6 +901,33 @@ function extractErrorMessage(error, fallback) {
     }
 
     return error?.response?.data?.message || fallback;
+}
+
+function updateRealtimeBadgeCounts(payload) {
+    if (!payload?.unread_counts) {
+        return;
+    }
+
+    Object.entries(payload.unread_counts).forEach(([badgeKey, count]) => {
+        document.querySelectorAll(`[data-dashboard-badge="${badgeKey}"]`).forEach(node => {
+            node.textContent = String(count || 0);
+            node.classList.toggle('d-none', !count);
+        });
+    });
+}
+
+function initializeAdminRealtime() {
+    const indicator = document.querySelector('[data-admin-realtime]');
+
+    if (!indicator || !window.Echo) {
+        return;
+    }
+
+    const realtimeChannel = indicator.dataset.realtimeChannel;
+
+    window.Echo.channel(realtimeChannel).listen('.admin.realtime.updated', payload => {
+        updateRealtimeBadgeCounts(payload);
+    });
 }
 
 function initializeTeacherChart() {
@@ -994,8 +1407,170 @@ function initializeBookingModeForms() {
         inputs.forEach(input => {
             input.addEventListener('change', render);
         });
+        form.addEventListener('submit', async event => {
+            if (form.querySelector('[data-booking-balance-check]')) {
+                return;
+            }
+
+            if (form.dataset.bookingCostConfirmHandled === '1') {
+                return;
+            }
+
+            event.preventDefault();
+
+            if (!await ensureMediaInputsForAction('الحجز')) {
+                return;
+            }
+
+            requestBookingConfirmation(form);
+        });
 
         render();
+    });
+
+    const bookingModal = document.getElementById('studentBookingModal');
+
+    if (bookingModal) {
+        bookingModal.addEventListener('shown.bs.modal', () => {
+            forms.forEach(form => {
+                delete form.dataset.bookingCostConfirmHandled;
+            });
+        });
+    }
+}
+
+function initializeTeacherLiveAvailabilitySwitches() {
+    const switches = document.querySelectorAll('[data-live-availability-switch]');
+
+    switches.forEach(input => {
+        input.dataset.previousChecked = input.checked ? '1' : '0';
+
+        input.addEventListener('change', async () => {
+            const form = input.closest('form');
+            const previousChecked = input.dataset.previousChecked === '1';
+
+            if (!form) {
+                return;
+            }
+
+            if (input.checked && !await ensureMediaInputsForAction('تفعيل الجلسات المباشرة')) {
+                input.checked = previousChecked;
+                return;
+            }
+
+            form.dataset.deviceCheckPassed = '1';
+            input.dataset.previousChecked = input.checked ? '1' : '0';
+            form.requestSubmit ? form.requestSubmit() : form.submit();
+        });
+    });
+}
+
+function initializeTeacherLivePresence() {
+    const indicator = document.querySelector('[data-live-request-indicator]');
+
+    if (!indicator?.dataset.presenceUrl) {
+        return;
+    }
+
+    let intentionalNavigation = false;
+    const token = indicator.querySelector('input[name="_token"]')?.value;
+
+    const postPresence = url => {
+        if (!url || !token) {
+            return;
+        }
+
+        const data = new FormData();
+        data.append('_token', token);
+
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(url, data);
+            return;
+        }
+
+        fetch(url, {
+            method: 'POST',
+            body: data,
+            keepalive: true,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        }).catch(() => { });
+    };
+
+    document.addEventListener('submit', () => {
+        intentionalNavigation = true;
+    }, true);
+
+    document.addEventListener('click', event => {
+        const link = event.target?.closest?.('a[href]');
+
+        if (!link || link.target === '_blank') {
+            return;
+        }
+
+        try {
+            const href = new URL(link.href, window.location.href);
+
+            if (href.origin === window.location.origin) {
+                intentionalNavigation = true;
+            }
+        } catch (error) {
+            intentionalNavigation = true;
+        }
+    }, true);
+
+    postPresence(indicator.dataset.presenceUrl);
+    window.setInterval(() => postPresence(indicator.dataset.presenceUrl), 15000);
+
+    window.addEventListener('pagehide', () => {
+        if (!intentionalNavigation) {
+            postPresence(indicator.dataset.offlineUrl);
+        }
+    });
+}
+
+function initializeDeviceCheckForms() {
+    const forms = document.querySelectorAll('[data-device-check-form]');
+
+    forms.forEach(form => {
+        form.addEventListener('submit', async event => {
+            if (form.dataset.deviceCheckPassed === '1') {
+                delete form.dataset.deviceCheckPassed;
+                return;
+            }
+
+            // Immediately block default submission and other listeners
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            const ok = await ensureMediaInputsForAction('متابعة هذا الإجراء');
+
+            if (!ok) {
+                // device check failed; do not proceed
+                return;
+            }
+
+            // device check passed — submit programmatically so other handlers run normally
+            form.dataset.deviceCheckPassed = '1';
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        }, true);
+    });
+}
+
+function initializeJoinSessionLinks() {
+    const joinLinks = document.querySelectorAll('a[data-join-session-link]');
+
+    joinLinks.forEach(link => {
+        link.addEventListener('click', async event => {
+            if (!await ensureMediaInputsForAction('الانضمام للجلسة')) {
+                event.preventDefault();
+            }
+        });
     });
 }
 
@@ -1054,6 +1629,7 @@ function initializeTeacherSlotPicker() {
                 availabilityHidden.value = '';
                 durationSelect.classList.remove('is-invalid');
                 if (submitButton) {
+                    submitButton.dataset.slotDisabled = '1';
                     submitButton.disabled = true;
                 }
                 if (warning) {
@@ -1071,6 +1647,7 @@ function initializeTeacherSlotPicker() {
             if (requestedDuration > maxDuration) {
                 durationSelect.classList.add('is-invalid');
                 if (submitButton) {
+                    submitButton.dataset.slotDisabled = '1';
                     submitButton.disabled = true;
                 }
                 if (warning) {
@@ -1080,6 +1657,7 @@ function initializeTeacherSlotPicker() {
             } else {
                 durationSelect.classList.remove('is-invalid');
                 if (submitButton) {
+                    submitButton.dataset.slotDisabled = '0';
                     submitButton.disabled = false;
                 }
                 if (warning) {
@@ -1098,6 +1676,139 @@ function initializeTeacherSlotPicker() {
 
         renderStarts();
         syncSelection();
+    });
+}
+
+function initializeBookingBalanceChecks() {
+    const forms = document.querySelectorAll('form');
+
+    forms.forEach(form => {
+        const config = form.querySelector('[data-booking-balance-check]');
+
+        if (!config) {
+            return;
+        }
+
+        const subjectInput = form.querySelector('[data-booking-subject]');
+        const durationInput = form.querySelector('[data-booking-duration]') || form.querySelector('select[name="duration_hours"]');
+        const modeInputs = form.querySelectorAll('[data-booking-mode-input]');
+        const warning = form.querySelector('[data-booking-balance-warning]');
+        const submitButton = form.querySelector('[data-booking-submit]') || form.querySelector('button[type="submit"]');
+        const hourlyRateNode = form.querySelector('[data-booking-hourly-rate]');
+        const totalNode = form.querySelector('[data-booking-total]');
+        const balance = Number(config.dataset.studentBalance || '0');
+        const subjectRates = safeJsonParse(config.dataset.subjectRates || '{}', {});
+        const hardDisabled = Boolean(submitButton?.disabled && submitButton?.dataset.slotDisabled !== '0');
+
+        const render = () => {
+            const selectedMode = Array.from(modeInputs).find(input => input.checked)?.value || 'scheduled';
+            const subjectName = subjectInput?.value || '';
+            const hourlyRate = Number(subjectRates?.[subjectName] || 0);
+            const durationHours = selectedMode === 'instant' ? 1 : Number(durationInput?.value || 1);
+            const total = hourlyRate * durationHours;
+            const insufficient = total > 0 && balance < total;
+
+            if (hourlyRateNode) {
+                hourlyRateNode.textContent = String(Math.round(hourlyRate));
+            }
+
+            if (totalNode) {
+                totalNode.textContent = String(Math.round(total));
+            }
+
+            if (warning) {
+                warning.classList.toggle('d-none', !insufficient);
+                warning.textContent = insufficient
+                    ? `رصيدك الحالي لا يكفي لهذه الجلسة. المطلوب ${Math.round(total)} والمتوفر ${Math.round(balance)}.`
+                    : '';
+            }
+
+            if (submitButton) {
+                const slotDisabled = submitButton.dataset.slotDisabled === '1';
+                submitButton.disabled = hardDisabled || slotDisabled || insufficient;
+            }
+        };
+
+        form.addEventListener('submit', event => {
+            const subjectName = subjectInput?.value || '';
+            const hourlyRate = Number(subjectRates?.[subjectName] || 0);
+            const selectedMode = Array.from(modeInputs).find(input => input.checked)?.value || 'scheduled';
+            const durationHours = selectedMode === 'instant' ? 1 : Number(durationInput?.value || 1);
+            const total = hourlyRate * durationHours;
+
+            if (total > 0 && balance < total) {
+                event.preventDefault();
+                showAppToast('رصيدك الحالي لا يكفي لحجز هذه الجلسة.', 'danger');
+                return;
+            }
+            if (form.dataset.bookingCostConfirmHandled === '1') {
+                return;
+            }
+
+            event.preventDefault();
+            requestBookingConfirmation(form, {
+                mode: selectedMode,
+                teacher_name: '',
+                hourly_rate: hourlyRate,
+                total,
+                can_afford: true,
+            });
+        });
+
+        subjectInput?.addEventListener('change', render);
+        durationInput?.addEventListener('change', render);
+        modeInputs.forEach(input => input.addEventListener('change', render));
+        render();
+    });
+}
+
+function initializeWalletForms() {
+    const forms = document.querySelectorAll('[data-wallet-form]');
+
+    forms.forEach(form => {
+        const amountInput = form.querySelector('[data-wallet-amount]');
+        const proofInput = form.querySelector('[data-wallet-proof]');
+        const submitButton = form.querySelector('[data-wallet-submit]');
+        const fillMaxButton = form.querySelector('[data-wallet-fill-max]');
+        const amountError = form.querySelector('[data-wallet-amount-error]');
+        const proofError = form.querySelector('[data-wallet-proof-error]');
+        const maxAmount = Number(form.dataset.walletMax || '0');
+
+        const render = () => {
+            const amount = Number(amountInput?.value || '0');
+            const file = proofInput?.files?.[0] || null;
+            const amountValid = Number.isFinite(amount) && amount >= 50 && (!maxAmount || amount <= maxAmount);
+            const proofValid = !proofInput || (file && file.type.startsWith('image/'));
+
+            if (amountError) {
+                const amountMessage = amount > 0 && amount < 50
+                    ? 'أقل مبلغ مسموح به هو 50.'
+                    : (maxAmount && amount > maxAmount ? 'المبلغ المطلوب أكبر من الرصيد الحالي.' : '');
+                amountError.textContent = amountMessage || 'أقل مبلغ مسموح به هو 50.';
+                amountError.classList.toggle('d-none', !amountMessage);
+            }
+
+            if (proofError) {
+                proofError.classList.toggle('d-none', proofValid || !file);
+            }
+
+            if (submitButton) {
+                submitButton.disabled = !(amountValid && proofValid);
+            }
+        };
+
+        fillMaxButton?.addEventListener('click', () => {
+            if (!amountInput) {
+                return;
+            }
+
+            amountInput.value = maxAmount > 0 ? String(Math.floor(maxAmount)) : '';
+            render();
+        });
+
+        amountInput?.addEventListener('input', render);
+        proofInput?.addEventListener('change', render);
+        render();
     });
 }
 
@@ -1125,23 +1836,25 @@ function initializeJoinSessionPrompts() {
     const prompts = document.querySelectorAll('[data-join-session-modal]');
 
     prompts.forEach(prompt => {
-        const payload = JSON.parse(prompt.dataset.joinSessionModal || '{}');
-
-        if (!payload.can_join_now) {
-            return;
-        }
-
-        const storageKey = `join-prompt-shown-${document.body.dataset.themeScope || 'app'}-${payload.id}`;
-
-        if (sessionStorage.getItem(storageKey)) {
-            return;
-        }
-
-        window.setTimeout(() => {
-            sessionStorage.setItem(storageKey, '1');
-            bootstrap.Modal.getOrCreateInstance(prompt).show();
-        }, 350);
+        applyJoinPromptPayload(prompt, safeJsonParse(prompt.dataset.joinSessionModal, null));
     });
+}
+
+function initializeBookingResult() {
+    const node = document.querySelector('[data-booking-result]');
+
+    if (!node) {
+        return;
+    }
+
+    const payload = safeJsonParse(node.dataset.bookingPayload, null);
+    const prompt = document.getElementById('studentJoinSessionPrompt');
+
+    if (!prompt) {
+        return;
+    }
+
+    applyJoinPromptPayload(prompt, payload, { forceShow: true });
 }
 
 async function initializeVideoCallPage() {
@@ -1180,7 +1893,9 @@ function initializeLiveSessionRoom() {
     let localStream = null;
     const remoteStream = new MediaStream();
     let mediaRecorder = null;
-    let recordingChunks = [];
+    let recordingChunkIndex = 0;
+    let recordingUploadQueue = Promise.resolve();
+    let recordingUploadStarted = false;
     let notesTimer = null;
 
     const remoteVideo = root.querySelector('[data-remote-video]');
@@ -1335,17 +2050,21 @@ function initializeLiveSessionRoom() {
         renderComplaints(payload.complaints || []);
         updateJoinButtons(Boolean(payload.session.can_join_now));
 
-        if (payload.session.status === 'completed' || payload.session.status === 'cancelled') {
-            updateOverlay(payload.session.status === 'completed' ? 'انتهت الجلسة وتم حفظ بياناتها.' : 'تم إلغاء الجلسة.');
-            await stopRecordingAndUpload();
-
-            if (!redirecting) {
-                redirecting = true;
-                window.setTimeout(() => {
-                    window.location.href = config.redirectUrl;
-                }, 1500);
+        if (payload.session.status === 'completed') {
+            if (payload.session.recording_url) {
+                updateOverlay('انتهت الجلسة. التسجيل متوفر الآن.');
+            } else {
+                updateOverlay('انتهت الجلسة. ستتوفر الجلسة قريبًا.');
+                startBackgroundRecordingUpload().catch(() => {
+                    // Upload will keep retrying in subsequent poll cycles if needed.
+                });
             }
 
+            return;
+        }
+
+        if (payload.session.status === 'cancelled') {
+            updateOverlay('تم إلغاء الجلسة.');
             return;
         }
 
@@ -1520,56 +2239,68 @@ function initializeLiveSessionRoom() {
         }
     };
 
-    const startRecordingIfPossible = () => {
-        if (mediaRecorder || !localStream || remoteStream.getTracks().length === 0 || !window.MediaRecorder) {
-            return;
+    const requestWithRetry = async (requestFn, attempts = 3, delayMs = 1000) => {
+        let lastError;
+
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            try {
+                return await requestFn();
+            } catch (error) {
+                lastError = error;
+
+                if (attempt >= attempts) {
+                    break;
+                }
+
+                await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+            }
         }
 
-        const combined = new MediaStream([
-            ...localStream.getTracks(),
-            ...remoteStream.getTracks(),
-        ]);
+        throw lastError;
+    };
 
-        const mimeType = recordingMimeType();
-        mediaRecorder = mimeType
-            ? new MediaRecorder(combined, { mimeType })
-            : new MediaRecorder(combined);
-
-        recordingChunks = [];
-
-        mediaRecorder.ondataavailable = event => {
-            if (event.data?.size) {
-                recordingChunks.push(event.data);
-            }
-        };
-
-        mediaRecorder.start(1000);
+    const startRecordingIfPossible = () => {
+        // Recording disabled by policy: skip all MediaRecorder work.
+        return;
     };
 
     const stopRecordingAndUpload = async () => {
-        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        if (window.DISABLE_SESSION_RECORDING) {
             return;
         }
 
-        await new Promise(resolve => {
-            mediaRecorder.onstop = async () => {
-                if (recordingChunks.length) {
-                    const blob = new Blob(recordingChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-                    const formData = new FormData();
-                    formData.append('recording', blob, `session-${config.sessionId}.webm`);
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            await new Promise(resolve => {
+                mediaRecorder.onstop = resolve;
+                mediaRecorder.stop();
+            });
+        }
 
-                    try {
-                        await axios.post(config.recordingUrl, formData);
-                    } catch (error) {
-                        // Keep the room responsive even if the recording upload fails.
-                    }
-                }
+        await recordingUploadQueue;
 
-                resolve();
-            };
+        try {
+            await requestWithRetry(
+                () => axios.post(config.recordingUrl, { recording_finalize: true }),
+                3,
+                2000
+            );
+        } catch (error) {
+            console.error('Recording finalization failed after retries:', error);
+        }
+    };
 
-            mediaRecorder.stop();
-        });
+    const startBackgroundRecordingUpload = async () => {
+        if (recordingUploadStarted) {
+            return;
+        }
+
+        recordingUploadStarted = true;
+
+        try {
+            await stopRecordingAndUpload();
+        } catch (error) {
+            // Background upload failed, but we do not disrupt the room.
+        }
     };
 
     const joinRoom = async () => {
@@ -1608,8 +2339,13 @@ function initializeLiveSessionRoom() {
 
         try {
             const response = await axios.post(config.endUrl, { confirm_end: confirmEnd });
-            await stopRecordingAndUpload();
-            window.location.href = response.data.redirect_url;
+
+            startBackgroundRecordingUpload().catch(() => {
+                // Keep the room responsive even if background upload fails.
+            });
+
+            // Do not redirect immediately; keep the room open until recording becomes available.
+            return response;
         } catch (error) {
             const confirmMessage = error?.response?.data?.errors?.confirm_end?.[0];
 
@@ -1708,10 +2444,9 @@ function initializeLiveSessionRoom() {
             event.preventDefault();
 
             const formData = new FormData(complaintForm);
-            await axios.post(config.complaintUrl, {
-                title: String(formData.get('title') || '').trim(),
-                description: String(formData.get('description') || '').trim(),
-            });
+            formData.set('title', String(formData.get('title') || '').trim());
+            formData.set('description', String(formData.get('description') || '').trim());
+            await axios.post(config.complaintUrl, formData);
             complaintForm.reset();
             await pollState();
         });

@@ -13,6 +13,7 @@ use App\Libraries\RtcTokenBuilder;
 use App\Models\Student;
 use App\Models\Teacher;
 use App\Models\TeacherSession;
+use App\Services\AppSettingsService;
 use App\Services\LiveSession\LiveSessionRoomService;
 use App\Services\Realtime\RealtimeChannelService;
 use App\Services\Realtime\RealtimeUpdateService;
@@ -29,6 +30,7 @@ class LiveSessionRoomController extends Controller
         private readonly LiveSessionRoomService $roomService,
         private readonly RealtimeUpdateService $realtime,
         private readonly RealtimeChannelService $channels,
+        private readonly AppSettingsService $settings,
     ) {
     }
 
@@ -57,12 +59,18 @@ class LiveSessionRoomController extends Controller
             'recordingUrl' => $this->routeFor($role, 'recording', $session),
             'endUrl' => $this->routeFor($role, 'end', $session),
             'roomChannel' => $this->channels->liveSessionChannel($session),
-            'appId' => config('services.agora.app_id'),
+            'agoraChannel' => "session-{$session->id}",
+            'appId' => $this->settings->agoraAppId(),
             'iceServers' => [],
             'redirectUrl' => $role === 'teacher'
-                ? route('teacher.sessions.index', ['selected_session_id' => $session->id], false)
-                : route('student.sessions.index', [], false),
+                ? route('teacher.sessions.show', $session->id, false)
+                : route('student.sessions.show', $session->id, false),
             'autojoin' => $request->boolean('autojoin'),
+            'sessionStatus' => $session->status,
+            'sessionScheduledAt' => optional($session->scheduled_at)->timestamp,
+            'sessionStartedAt' => optional($session->started_at)->timestamp,
+            'sessionDurationHours' => (int) ($session->duration_hours ?: 1),
+            'sessionEndTime' => optional($session->plannedEndAt())->timestamp,
         ]);
     }
 
@@ -123,6 +131,13 @@ class LiveSessionRoomController extends Controller
         return response()->json([
             'status' => 'ok',
             'message_id' => $message->id,
+            'message' => [
+                'id' => $message->id,
+                'sender_role' => $message->sender_role,
+                'sender_name' => $message->sender_name,
+                'message' => $message->message,
+                'created_at' => $message->created_at?->toIso8601String(),
+            ],
         ]);
     }
 
@@ -177,7 +192,9 @@ class LiveSessionRoomController extends Controller
     {
         [$actor, $role] = $this->actorFromRequest($request);
         $session = $this->resolveSession($actor, $role, $sessionId);
-        $complaint = $this->roomService->storeComplaint($session, $role, $request->validated());
+        $data = $request->validated();
+        $data['attachment'] = $request->file('attachment');
+        $complaint = $this->roomService->storeComplaint($session, $role, $data);
         $this->realtime->broadcastRoomEvent($session, 'complaint', [
             'id' => $complaint->id,
             'title' => $complaint->title,
@@ -185,6 +202,7 @@ class LiveSessionRoomController extends Controller
             'submitted_by' => $complaint->submitted_by,
             'submitted_at' => $complaint->submitted_at?->toIso8601String(),
         ]);
+        $this->realtime->broadcastAdminDashboard();
 
         return response()->json([
             'status' => 'ok',
@@ -199,12 +217,32 @@ class LiveSessionRoomController extends Controller
     {
         [$actor, $role] = $this->actorFromRequest($request);
         $session = $this->resolveSession($actor, $role, $sessionId);
-        $updated = $this->roomService->uploadRecording($session, $request->file('recording'));
+
+        if ($request->boolean('recording_finalize')) {
+            $updated = $this->roomService->finalizeRecordingUpload($session);
+        } elseif ($request->hasFile('recording')) {
+            $chunkIndex = $request->integer('recording_chunk_index');
+            $isLastChunk = $request->boolean('recording_is_last_chunk');
+
+            if ($request->has('recording_chunk_index')) {
+                $updated = $this->roomService->uploadRecordingChunk(
+                    $session,
+                    $request->file('recording'),
+                    $chunkIndex,
+                    $isLastChunk
+                );
+            } else {
+                $updated = $this->roomService->uploadRecording($session, $request->file('recording'));
+            }
+        } else {
+            $updated = $session;
+        }
+
         $this->realtime->broadcastRoomEvent($updated, 'recording');
 
         return response()->json([
             'status' => 'ok',
-            'recording_url' => $updated->recording_public_url,
+            'recording_url' => $updated->recording_url,
         ]);
     }
 
@@ -216,8 +254,8 @@ class LiveSessionRoomController extends Controller
         [$actor, $role] = $this->actorFromRequest($request);
         $session = $this->resolveSession($actor, $role, $sessionId);
 
-        $appId = config('services.agora.app_id');
-        $appCertificate = config('services.agora.app_certificate');
+        $appId = $this->settings->agoraAppId();
+        $appCertificate = $this->settings->agoraAppCertificate();
 
         if (! $appId || ! $appCertificate) {
             abort(500, 'Agora configuration missing');
@@ -255,15 +293,15 @@ class LiveSessionRoomController extends Controller
     {
         [$actor, $role] = $this->actorFromRequest($request);
         $session = $this->resolveSession($actor, $role, $sessionId);
-        $ended = $this->roomService->endSession($session, $role, (bool) $request->validated('confirm_end'));
+        $ended = $this->roomService->endSession($session, $role, $request->validated('cancellation_reason'));
         $this->realtime->broadcastRoomEvent($ended, 'ended');
         $this->realtime->broadcastSessionParticipants($ended);
 
         return response()->json([
             'status' => 'ok',
             'redirect_url' => $role === 'teacher'
-                ? route('teacher.sessions.index', ['selected_session_id' => $ended->id], false)
-                : route('student.sessions.index', [], false),
+                ? route('teacher.sessions.show', $ended->id, false)
+                : route('student.sessions.show', $ended->id, false),
             'session' => $this->roomService->roomState($ended, $role)['session'],
         ]);
     }
@@ -306,5 +344,13 @@ class LiveSessionRoomController extends Controller
         $prefix = $role === 'teacher' ? 'teacher' : 'student';
 
         return route("{$prefix}.sessions.room.{$action}", $session->id, false);
+    }
+
+    /**
+     * Get the session end timestamp for client countdown.
+     */
+    private function sessionEndTime(TeacherSession $session): ?int
+    {
+        return optional($session->plannedEndAt())->timestamp;
     }
 }

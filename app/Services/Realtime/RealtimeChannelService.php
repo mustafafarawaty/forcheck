@@ -32,6 +32,14 @@ class RealtimeChannelService
     }
 
     /**
+     * Admin dashboard channel.
+     */
+    public function adminDashboardChannel(): string
+    {
+        return 'admin-dashboard.'.$this->signature('admin-dashboard');
+    }
+
+    /**
      * Live room channel for a session.
      */
     public function liveSessionChannel(TeacherSession|int $session): string

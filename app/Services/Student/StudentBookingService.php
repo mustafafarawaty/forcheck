@@ -9,7 +9,10 @@ use App\Models\TeacherLiveRequest;
 use App\Models\TeacherSession;
 use App\Models\TeacherSubject;
 use App\Repositories\TeacherLiveRequestRepository;
+use App\Services\AppSettingsService;
 use App\Services\Realtime\RealtimeUpdateService;
+use App\Services\Teacher\TeacherPresenceService;
+use App\Services\Wallet\WalletService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +25,9 @@ class StudentBookingService
     public function __construct(
         private readonly TeacherLiveRequestRepository $liveRequests,
         private readonly RealtimeUpdateService $realtime,
+        private readonly WalletService $wallets,
+        private readonly AppSettingsService $settings,
+        private readonly TeacherPresenceService $presence,
     ) {
     }
 
@@ -35,6 +41,36 @@ class StudentBookingService
     {
         return DB::transaction(function () use ($student, $data): array {
             $bookingMode = $data['booking_mode'];
+            // Prevent rapid repeated instant requests: if the student has a recent
+            // live request that is still pending and was created less than 5
+            // minutes ago, block the new instant request. If the last request
+            // was rejected, allow immediately.
+            if ($bookingMode === 'instant') {
+                $last = TeacherLiveRequest::query()
+                    ->where('student_id', $student->id)
+                    ->latest('requested_at')
+                    ->first();
+
+                if ($last) {
+                    $status = $last->status;
+
+                    if ($status === 'pending') {
+                        $minutes = CarbonImmutable::now()->diffInMinutes(CarbonImmutable::parse($last->requested_at));
+
+                        if ($minutes < 5) {
+                            throw ValidationException::withMessages([
+                                'booking_mode' => 'الرجاء الانتظار 5 دقائق قبل إعادة محاولة طلب جلسة مباشرة.',
+                            ]);
+                        }
+                    }
+
+                    if ($status === 'accepted') {
+                        throw ValidationException::withMessages([
+                            'booking_mode' => 'لديك طلب جلسة مباشرة مقبول بالفعل.',
+                        ]);
+                    }
+                }
+            }
             $durationHours = (int) $data['duration_hours'];
             $selection = $this->resolveTeacherAndSubject(
                 $student,
@@ -49,9 +85,13 @@ class StudentBookingService
 
             $teacher = $selection['teacher'];
             $subject = $selection['subject'];
+            $sessionPrice = (float) ($subject->hourly_rate_syp * $durationHours);
+            $pricing = $this->settings->sessionPricing($sessionPrice);
+
+            $this->wallets->ensureStudentCanAfford($student, $sessionPrice);
 
             if ($bookingMode === 'instant') {
-                if (! $teacher->is_accepting_instant_sessions) {
+                if (! $this->teacherCanReceiveInstantRequest($teacher)) {
                     throw ValidationException::withMessages([
                         'booking_mode' => 'هذا الأستاذ لا يستقبل جلسات مباشرة حاليًا.',
                     ]);
@@ -102,10 +142,15 @@ class StudentBookingService
                 'status' => 'upcoming',
                 'booking_type' => 'scheduled',
                 'duration_hours' => $durationHours,
-                'price' => $subject->hourly_rate_syp * $durationHours,
+                'price' => $pricing['gross'],
+                'admin_commission_percentage' => $pricing['admin_commission_percentage'],
+                'admin_commission_amount' => $pricing['admin_commission_amount'],
+                'teacher_earning_amount' => $pricing['teacher_earning_amount'],
                 'notes' => $data['note'] ?? null,
                 'confirmation_deadline_at' => $scheduledAt->subMinutes(30),
             ]);
+
+            $this->wallets->holdSessionAmount($session);
 
             $this->realtime->broadcastSessionParticipants($session);
 
@@ -117,6 +162,88 @@ class StudentBookingService
                 'liveRequest' => null,
             ];
         });
+    }
+
+    /**
+     * Resolve a booking candidate and price without creating the booking.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{mode:string, teacher:Teacher, subject:TeacherSubject, hourly_rate:float, duration_hours:int, total:float, balance:float, can_afford:bool}
+     */
+    public function preview(Student $student, array $data): array
+    {
+        $bookingMode = $data['booking_mode'];
+        $durationHours = $bookingMode === 'instant' ? 1 : (int) $data['duration_hours'];
+        // Prevent rapid repeated instant preview attempts — mirror the server-side
+        // restriction used when actually creating the live request. If the last
+        // request is pending and younger than 5 minutes, return a validation
+        // error so the frontend can show an appropriate message.
+        if ($bookingMode === 'instant') {
+            $last = TeacherLiveRequest::query()
+                ->where('student_id', $student->id)
+                ->latest('requested_at')
+                ->first();
+
+            if ($last) {
+                $status = $last->status;
+
+                if ($status === 'pending') {
+                    $minutes = CarbonImmutable::now()->diffInMinutes(CarbonImmutable::parse($last->requested_at));
+
+                    if ($minutes < 5) {
+                        throw ValidationException::withMessages([
+                            'booking_mode' => 'الرجاء الانتظار 5 دقائق قبل إعادة محاولة طلب جلسة مباشرة.',
+                        ]);
+                    }
+                }
+
+                if ($status === 'accepted') {
+                    throw ValidationException::withMessages([
+                        'booking_mode' => 'لديك طلب جلسة مباشرة مقبول بالفعل.',
+                    ]);
+                }
+            }
+        }
+        $selection = $this->resolveTeacherAndSubject(
+            $student,
+            $data['subject_name'],
+            isset($data['teacher_id']) ? (int) $data['teacher_id'] : null,
+            $bookingMode,
+            $data['scheduled_slot_at'] ?? null,
+            isset($data['preferred_day_of_week']) ? (int) $data['preferred_day_of_week'] : null,
+            $data['preferred_starts_at'] ?? null,
+            $durationHours,
+        );
+
+        $teacher = $selection['teacher'];
+        $subject = $selection['subject'];
+
+        if ($bookingMode === 'scheduled') {
+            $this->resolveAvailability(
+                $teacher,
+                $subject,
+                isset($data['teacher_availability_id']) ? (int) $data['teacher_availability_id'] : null,
+                $data['scheduled_slot_at'] ?? null,
+                isset($data['preferred_day_of_week']) ? (int) $data['preferred_day_of_week'] : null,
+                $data['preferred_starts_at'] ?? null,
+                $durationHours,
+            );
+        }
+
+        $hourlyRate = (float) $subject->hourly_rate_syp;
+        $total = $hourlyRate * $durationHours;
+        $balance = (float) $student->balance;
+
+        return [
+            'mode' => $bookingMode,
+            'teacher' => $teacher,
+            'subject' => $subject,
+            'hourly_rate' => $hourlyRate,
+            'duration_hours' => $durationHours,
+            'total' => $total,
+            'balance' => $balance,
+            'can_afford' => $balance >= $total,
+        ];
     }
 
     /**
@@ -168,6 +295,7 @@ class StudentBookingService
 
         $availability = $this->resolveAvailability($candidate, $subject, null, null, null, null, $durationHours);
         $scheduledAt = $this->nextOccurrence($availability);
+        $pricing = $this->settings->sessionPricing((float) ($subject->hourly_rate_syp * $durationHours));
 
         return $candidate->sessions()->create([
             'teacher_subject_id' => $subject->id,
@@ -178,7 +306,10 @@ class StudentBookingService
             'status' => 'upcoming',
             'booking_type' => 'scheduled',
             'duration_hours' => $durationHours,
-            'price' => $subject->hourly_rate_syp * $durationHours,
+            'price' => $pricing['gross'],
+            'admin_commission_percentage' => $pricing['admin_commission_percentage'],
+            'admin_commission_amount' => $pricing['admin_commission_amount'],
+            'teacher_earning_amount' => $pricing['teacher_earning_amount'],
             'notes' => 'تمت إعادة جدولة الجلسة تلقائيًا بعد عدم تأكيد الموعد من الأستاذ السابق.',
             'confirmation_deadline_at' => $scheduledAt->subMinutes(30),
         ]);
@@ -220,7 +351,16 @@ class StudentBookingService
             $teachers = $query->get();
         } else {
             if ($bookingMode === 'instant') {
-                $query->where('is_accepting_instant_sessions', true);
+                $query
+                    ->where('is_accepting_instant_sessions', true)
+                    ->whereDoesntHave('liveRequests', function ($liveRequestQuery): void {
+                        $liveRequestQuery->where('status', 'pending');
+                    })
+                    ->whereDoesntHave('sessions', function ($sessionQuery): void {
+                        $sessionQuery
+                            ->where('booking_type', 'instant')
+                            ->whereIn('status', ['upcoming', 'in_progress']);
+                    });
             }
 
             $teachers = $query->get()->shuffle();
@@ -228,7 +368,7 @@ class StudentBookingService
 
         $teacher = $teachers->first(function (Teacher $teacher) use ($bookingMode, $scheduledSlotAt, $preferredDayOfWeek, $preferredStartsAt, $durationHours): bool {
             if ($bookingMode === 'instant') {
-                return $teacher->is_accepting_instant_sessions;
+                return $this->teacherCanReceiveInstantRequest($teacher);
             }
 
             return $teacher->availabilities->contains(function (TeacherAvailability $availability) use ($teacher, $scheduledSlotAt, $preferredDayOfWeek, $preferredStartsAt, $durationHours): bool {
@@ -427,5 +567,21 @@ class StudentBookingService
                 'subject_name' => 'لديك جلسة أخرى محجوزة في هذا التوقيت بالفعل.',
             ]);
         }
+    }
+
+    private function teacherCanReceiveInstantRequest(Teacher $teacher): bool
+    {
+        if (! $teacher->is_accepting_instant_sessions || ! $this->presence->isOnline($teacher)) {
+            return false;
+        }
+
+        if ($teacher->liveRequests()->where('status', 'pending')->exists()) {
+            return false;
+        }
+
+        return ! $teacher->sessions()
+            ->where('booking_type', 'instant')
+            ->whereIn('status', ['upcoming', 'in_progress'])
+            ->exists();
     }
 }

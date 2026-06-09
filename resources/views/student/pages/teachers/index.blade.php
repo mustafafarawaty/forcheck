@@ -10,8 +10,10 @@
                 <div class="student-section-title mb-1">استكشف الأساتذة</div>
                 <div class="text-muted">يظهر هنا فقط الأساتذة المناسبون للفئة الدراسية الحالية الخاصة بك.</div>
             </div>
-            <form action="{{ route('student.sessions.book') }}" method="POST" class="row g-2 align-items-end">
+            <form action="{{ route('student.sessions.book') }}" method="POST" class="row g-2 align-items-end" data-booking-mode-root data-booking-preview-url="{{ route('student.sessions.book.preview') }}">
                 @csrf
+                <input type="hidden" name="booking_mode" value="instant">
+                <input type="hidden" name="duration_hours" value="1">
                 <div class="col-sm-8">
                     <label class="form-label fw-semibold mb-1">حجز سريع</label>
                     <select name="subject_name" class="form-select student-form-select">

@@ -6,7 +6,8 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BuildsPublicStorageUrls;
 
 /**
  * Teacher account with profile, education stage and owned records.
@@ -24,15 +25,19 @@ use Illuminate\Support\Facades\Storage;
  * @property int $ratings_count
  * @property string|null $about
  * @property bool $is_accepting_instant_sessions
+ * @property float $balance
  * @property Collection<int, TeacherSubject> $subjects
  * @property Collection<int, TeacherAvailability> $availabilities
  * @property Collection<int, TeacherSession> $sessions
  * @property Collection<int, TeacherComplaint> $complaints
  * @property Collection<int, TeacherLiveRequest> $liveRequests
+ * @property Collection<int, WalletTransaction> $walletTransactions
  */
 class Teacher extends Model
 {
+    use BuildsPublicStorageUrls;
     use HasFactory;
+    use SoftDeletes;
 
     /**
      * Mass assignable attributes.
@@ -52,6 +57,11 @@ class Teacher extends Model
         'ratings_count',
         'about',
         'is_accepting_instant_sessions',
+        'approval_status',
+        'approved_at',
+        'disabled_at',
+        'disabled_reason',
+        'balance',
     ];
 
     /**
@@ -75,7 +85,20 @@ class Teacher extends Model
             'rating_average' => 'decimal:2',
             'ratings_count' => 'integer',
             'is_accepting_instant_sessions' => 'boolean',
+            'approved_at' => 'datetime',
+            'disabled_at' => 'datetime',
+            'balance' => 'decimal:2',
         ];
+    }
+
+    public function isDisabled(): bool
+    {
+        return $this->disabled_at !== null;
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->approval_status === 'approved';
     }
 
     /**
@@ -87,7 +110,16 @@ class Teacher extends Model
             return null;
         }
 
-        return Storage::disk('public')->url($this->avatar_path);
+        return $this->publicStorageUrl($this->avatar_path);
+    }
+
+    public function getCertificateUrlAttribute(): ?string
+    {
+        if (! $this->certificate_path) {
+            return null;
+        }
+
+        return $this->publicStorageUrl($this->certificate_path);
     }
 
     /**
@@ -128,5 +160,13 @@ class Teacher extends Model
     public function liveRequests(): HasMany
     {
         return $this->hasMany(TeacherLiveRequest::class);
+    }
+
+    /**
+     * Teacher wallet movement history.
+     */
+    public function walletTransactions(): HasMany
+    {
+        return $this->hasMany(WalletTransaction::class)->latest('id');
     }
 }

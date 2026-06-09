@@ -5,9 +5,12 @@ namespace App\Services\Realtime;
 use App\Events\Realtime\BroadcastPayloadEvent;
 use App\Models\Student;
 use App\Models\Teacher;
+use App\Models\TeacherComplaint;
 use App\Models\TeacherLiveRequest;
 use App\Models\TeacherSession;
+use App\Models\WalletTransaction;
 use App\Services\LiveSession\LiveSessionRoomService;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Dispatches realtime dashboard and room updates through Reverb.
@@ -37,6 +40,7 @@ class RealtimeUpdateService
                     'session_update' => $session && $session->teacher_id === $teacher->id
                         ? $this->teacherSessionPayload($session->fresh(['subject', 'complaints', 'student', 'files']))
                         : null,
+                    'unread_counts' => $this->teacherUnreadCounts($teacher),
                 ],
             ));
         } catch (\Illuminate\Broadcasting\BroadcastException $e) {
@@ -63,6 +67,7 @@ class RealtimeUpdateService
                         ? $this->studentSessionPayload($session->fresh(['teacher', 'subject', 'complaints', 'files']))
                         : null,
                     'live_request_update' => $liveRequest ? $this->studentLiveRequestPayload($liveRequest->fresh(['teacher', 'subject', 'session'])) : null,
+                    'unread_counts' => $this->studentUnreadCounts($student),
                 ],
             ));
         } catch (\Illuminate\Broadcasting\BroadcastException $e) {
@@ -115,6 +120,8 @@ class RealtimeUpdateService
         if ($session->student) {
             $this->broadcastStudentDashboard($session->student, $session, $liveRequest);
         }
+
+        $this->broadcastAdminDashboard();
     }
 
     /**
@@ -137,7 +144,7 @@ class RealtimeUpdateService
             'duration_hours' => (int) ($session->duration_hours ?: 1),
             'ended_at' => $this->formatDateTime($session->ended_at),
             'notes' => $session->notes,
-            'recording_url' => $session->recording_public_url,
+            'recording_url' => null,
             'chat_excerpt' => $session->chat_excerpt,
             'cancellation_reason' => $session->cancellation_reason,
             'teacher_confirmed' => (bool) $session->teacher_confirmed_at,
@@ -162,6 +169,93 @@ class RealtimeUpdateService
         ];
     }
 
+    public function broadcastAdminDashboard(): void
+    {
+        try {
+            event(new BroadcastPayloadEvent(
+                [$this->channels->adminDashboardChannel()],
+                'admin.realtime.updated',
+                [
+                    'unread_counts' => $this->adminUnreadCounts(),
+                ],
+            ));
+        } catch (\Illuminate\Broadcasting\BroadcastException $e) {
+            \Log::warning('Failed to broadcast admin dashboard update', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function teacherUnreadCounts(Teacher $teacher): array
+    {
+        return [
+            'wallet' => Schema::hasColumn('wallet_transactions', 'teacher_read_at')
+                ? WalletTransaction::query()
+                    ->where('teacher_id', $teacher->id)
+                    ->whereNull('teacher_read_at')
+                    ->count()
+                : 0,
+            'complaints' => Schema::hasColumn('teacher_complaints', 'teacher_read_at')
+                ? TeacherComplaint::query()
+                    ->whereNull('teacher_read_at')
+                    ->where(function ($query) use ($teacher): void {
+                        $query->where('teacher_id', $teacher->id)
+                            ->orWhereHas('session', fn ($q) => $q->where('teacher_id', $teacher->id));
+                    })
+                    ->count()
+                : 0,
+            'sessions' => Schema::hasColumn('teacher_sessions', 'teacher_read_at')
+                ? TeacherSession::query()
+                    ->where('teacher_id', $teacher->id)
+                    ->whereIn('status', ['upcoming', 'in_progress'])
+                    ->whereNull('teacher_read_at')
+                    ->count()
+                : TeacherSession::query()
+                    ->where('teacher_id', $teacher->id)
+                    ->whereIn('status', ['upcoming', 'in_progress'])
+                    ->count(),
+        ];
+    }
+
+    private function studentUnreadCounts(Student $student): array
+    {
+        return [
+            'wallet' => WalletTransaction::query()
+                ->where('student_id', $student->id)
+                ->whereNull('student_read_at')
+                ->count(),
+            'complaints' => TeacherComplaint::query()
+                ->whereNull('student_read_at')
+                ->where(function ($query) use ($student): void {
+                    $query->where('student_id', $student->id)
+                        ->orWhereHas('session', fn ($sessionQuery) => $sessionQuery->where('student_id', $student->id));
+                })
+                ->count(),
+        ];
+    }
+
+    private function adminUnreadCounts(): array
+    {
+        return [
+            'wallet' => WalletTransaction::query()
+                ->where('status', 'pending')
+                ->count(),
+            'complaints' => Schema::hasColumn('teacher_complaints', 'admin_read_at')
+                ? TeacherComplaint::query()
+                    ->whereNull('admin_read_at')
+                    ->count()
+                : 0,
+            'sessions' => Schema::hasColumn('teacher_sessions', 'admin_read_at')
+                ? TeacherSession::query()
+                    ->whereIn('status', ['upcoming', 'in_progress'])
+                    ->whereNull('admin_read_at')
+                    ->count()
+                : TeacherSession::query()
+                    ->whereIn('status', ['upcoming', 'in_progress'])
+                    ->count(),
+        ];
+    }
+
     /**
      * Build the student list/detail payload used by realtime updates.
      *
@@ -181,7 +275,7 @@ class RealtimeUpdateService
             'started_at_iso' => $session->started_at?->toIso8601String(),
             'duration_hours' => (int) ($session->duration_hours ?: 1),
             'notes' => $session->notes,
-            'recording_url' => $session->recording_public_url,
+            'recording_url' => null,
             'chat_excerpt' => $session->chat_excerpt,
             'cancellation_reason' => $session->cancellation_reason,
             'student_confirmed' => (bool) $session->student_confirmed_at,
@@ -223,7 +317,7 @@ class RealtimeUpdateService
             'join_deadline_at' => $session->join_deadline_at?->toIso8601String(),
             'teacher_joined_at' => $session->teacher_joined_at?->toIso8601String(),
             'student_joined_at' => $session->student_joined_at?->toIso8601String(),
-            'recording_url' => $session->recording_public_url,
+            'recording_url' => null,
             'recording_expires_at' => $session->recording_expires_at?->toIso8601String(),
             'recording_note' => $this->recordingNote($session),
             'subject_name' => $session->subject?->name ?? 'جلسة',
@@ -311,6 +405,10 @@ class RealtimeUpdateService
      */
     private function recordingNote(TeacherSession $session): ?string
     {
+        if ($session->recording_url === '#') {
+            return 'تعليق التسجيل';
+        }
+
         if (! $session->recording_expires_at) {
             return null;
         }

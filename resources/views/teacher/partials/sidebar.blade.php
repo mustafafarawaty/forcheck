@@ -33,10 +33,17 @@
         </a>
         <a href="{{ route('teacher.sessions.index') }}" class="teacher-menu-link {{ request()->routeIs('teacher.sessions.*') ? 'active' : '' }}">
             <i class="fas fa-video"></i>
+            <span class="teacher-menu-badge {{ ($teacherUnreadCounts['sessions'] ?? 0) > 0 ? '' : 'd-none' }}" data-dashboard-role="teacher" data-dashboard-badge="sessions">{{ $teacherUnreadCounts['sessions'] ?? 0 }}</span>
             <span>الجلسات</span>
+        </a>
+        <a href="{{ route('teacher.wallet.index') }}" class="teacher-menu-link {{ request()->routeIs('teacher.wallet.*') ? 'active' : '' }}">
+            <i class="fas fa-wallet"></i>
+            <span class="teacher-menu-badge {{ ($teacherUnreadCounts['wallet'] ?? 0) > 0 ? '' : 'd-none' }}" data-dashboard-role="teacher" data-dashboard-badge="wallet">{{ $teacherUnreadCounts['wallet'] ?? 0 }}</span>
+            <span>حركة الرصيد</span>
         </a>
         <a href="{{ route('teacher.complaints.index') }}" class="teacher-menu-link {{ request()->routeIs('teacher.complaints.*') ? 'active' : '' }}">
             <i class="fas fa-shield-heart"></i>
+            <span class="teacher-menu-badge {{ ($teacherUnreadCounts['complaints'] ?? 0) > 0 ? '' : 'd-none' }}" data-dashboard-role="teacher" data-dashboard-badge="complaints">{{ $teacherUnreadCounts['complaints'] ?? 0 }}</span>
             <span>الشكاوى</span>
         </a>
         <a href="{{ route('teacher.profile.edit') }}" class="teacher-menu-link {{ request()->routeIs('teacher.profile.*') ? 'active' : '' }}">

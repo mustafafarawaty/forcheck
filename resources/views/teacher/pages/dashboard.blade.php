@@ -9,13 +9,21 @@
             <div class="col-xl-7">
                 <h2 class="display-6 fw-bold mb-4">كل ما تحتاجه لإدارة حصصك اليومية موجود هنا بشكل واضح وسريع.</h2>
                 <div class="d-flex flex-wrap gap-2">
-                    <a
-                        href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                        class="btn btn-light {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                        data-quick-join-button="teacher"
-                    >
-                        الانضمام السريع للجلسة
-                    </a>
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <a
+                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
+                            class="btn btn-light {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
+                            data-quick-join-button="teacher"
+                        >
+                            الانضمام السريع للجلسة
+                        </a>
+                        @if($activeSessionPayload && $activeSessionPayload['id'])
+                            <form action="{{ route('teacher.sessions.cancel', $activeSessionPayload['id']) }}" method="POST" class="m-0">
+                                @csrf
+                                <button type="submit" class="btn btn-outline-danger d-none d-sm-inline-block">إلغاء الجلسة</button>
+                            </form>
+                        @endif
+                    </div>
                     <a href="{{ route('teacher.sessions.index') }}" class="teacher-btn-soft">عرض الجلسات</a>
                     <a href="{{ route('teacher.availability.index') }}" class="teacher-btn-soft">إضافة موعد جديد</a>
                 </div>
@@ -33,13 +41,21 @@
                         <div class="small text-white-50">سيظهر أحدث الجلسات هنا تلقائيًا.</div>
                     @endif
 
-                    <a
-                        href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
-                        class="btn btn-light mt-3 w-100 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
-                        data-quick-join-button="teacher"
-                    >
-                        الانضمام الآن
-                    </a>
+                    <div class="d-flex flex-column gap-2">
+                        <a
+                            href="{{ $activeSessionPayload['join_url'] ?? '#' }}"
+                            class="btn btn-light mt-3 w-100 {{ $activeSessionPayload && $activeSessionPayload['can_join_now'] ? '' : 'd-none' }}"
+                            data-quick-join-button="teacher"
+                        >
+                            الانضمام الآن
+                        </a>
+                        @if($activeSessionPayload && $activeSessionPayload['id'])
+                            <form action="{{ route('teacher.sessions.cancel', $activeSessionPayload['id']) }}" method="POST" class="m-0">
+                                @csrf
+                                <button type="submit" class="btn btn-outline-danger w-100">إلغاء الجلسة</button>
+                            </form>
+                        @endif
+                    </div>
                 </div>
             </div>
         </div>

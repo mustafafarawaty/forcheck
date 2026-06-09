@@ -7,53 +7,86 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('head')
 </head>
+@php($isLiveRoomRoute = request()->routeIs('student.sessions.room.*'))
 <body class="student-body" data-theme-scope="student" data-app-timezone="{{ config('app.timezone') }}">
-    <div class="student-shell">
-        <div class="student-frame">
-            <div class="row g-0 flex-xl-nowrap">
-                @include('student.partials.sidebar')
-                <main class="col student-main">
-                    @include('student.partials.topbar')
-                    <div class="student-content">
-                        @if(session('status'))
-                            <div class="alert alert-success student-mobile-card mb-4">{{ session('status') }}</div>
-                        @endif
+    @if($isLiveRoomRoute)
+        <main class="student-live-room-main">
+            @yield('content')
+        </main>
+    @else
+        <div class="student-shell">
+            <div class="student-frame">
+                <div class="row g-0 flex-xl-nowrap">
+                    @include('student.partials.sidebar')
+                    <main class="col student-main">
+                        @include('student.partials.topbar')
+                        <div class="student-content">
+                            @if(session('status'))
+                                <div class="alert alert-success student-mobile-card mb-4">{{ session('status') }}</div>
+                            @endif
 
-                        @if($errors->any())
-                            <div class="alert alert-danger student-mobile-card mb-4">
-                                <ul class="mb-0 ps-3">
-                                    @foreach($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
+                            @if($errors->any())
+                                <div class="alert alert-danger student-mobile-card mb-4">
+                                    <ul class="mb-0 ps-3">
+                                        @foreach($errors->all() as $error)
+                                            <li>{{ $error }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
 
-                        @yield('content')
-                    </div>
-                </main>
+                            @yield('content')
+                        </div>
+                    </main>
+                </div>
             </div>
         </div>
-    </div>
 
-    <nav class="student-mobile-nav d-xl-none">
-        <a href="{{ route('student.dashboard') }}" class="student-mobile-link {{ request()->routeIs('student.dashboard') ? 'active' : '' }}">
-            <i class="fas fa-house"></i>
-            <span>الرئيسية</span>
-        </a>
-        <a href="{{ route('student.teachers.index') }}" class="student-mobile-link {{ request()->routeIs('student.teachers.*') ? 'active' : '' }}">
-            <i class="fas fa-user-group"></i>
-            <span>الأساتذة</span>
-        </a>
-        <a href="{{ route('student.sessions.index') }}" class="student-mobile-link {{ request()->routeIs('student.sessions.*') ? 'active' : '' }}">
-            <i class="fas fa-video"></i>
-            <span>الجلسات</span>
-        </a>
-        <a href="{{ route('student.profile.edit') }}" class="student-mobile-link {{ request()->routeIs('student.profile.*') ? 'active' : '' }}">
-            <i class="fas fa-user"></i>
-            <span>الحساب</span>
-        </a>
-    </nav>
+        @if(session('status'))
+            <div class="d-none" data-page-toast data-toast-type="success" data-toast-message="{{ session('status') }}"></div>
+        @endif
+
+        @if($errors->any())
+            <div class="d-none" data-page-toast data-toast-type="danger" data-toast-message="{{ $errors->first() }}"></div>
+        @endif
+
+        <nav class="student-mobile-nav d-xl-none">
+            <a href="{{ route('student.dashboard') }}" class="student-mobile-link {{ request()->routeIs('student.dashboard') ? 'active' : '' }}">
+                <i class="fas fa-house"></i>
+                <span>الرئيسية</span>
+            </a>
+            <a href="{{ route('student.teachers.index') }}" class="student-mobile-link {{ request()->routeIs('student.teachers.*') ? 'active' : '' }}">
+                <i class="fas fa-user-group"></i>
+                <span>الأساتذة</span>
+            </a>
+            <a href="{{ route('student.sessions.index') }}" class="student-mobile-link {{ request()->routeIs('student.sessions.*') ? 'active' : '' }}">
+                <i class="fas fa-video"></i>
+                <span>الجلسات</span>
+            </a>
+            <a href="{{ route('student.wallet.index') }}" class="student-mobile-link {{ request()->routeIs('student.wallet.*') ? 'active' : '' }}">
+                <i class="fas fa-wallet"></i>
+                @if(($studentUnreadCounts['wallet'] ?? 0) > 0)
+                    <span class="student-menu-badge student-mobile-badge badge text-bg-danger">{{ $studentUnreadCounts['wallet'] }}</span>
+                @endif
+                <span>الرصيد</span>
+            </a>
+            <a href="{{ route('student.complaints.index') }}" class="student-mobile-link {{ request()->routeIs('student.complaints.*') ? 'active' : '' }}">
+                <i class="fas fa-shield-heart"></i>
+                @if(($studentUnreadCounts['complaints'] ?? 0) > 0)
+                    <span class="student-menu-badge student-mobile-badge badge text-bg-danger">{{ $studentUnreadCounts['complaints'] }}</span>
+                @endif
+                <span>الشكاوى</span>
+            </a>
+            <a href="{{ route('student.profile.edit') }}" class="student-mobile-link {{ request()->routeIs('student.profile.*') ? 'active' : '' }}">
+                <i class="fas fa-user"></i>
+                <span>الحساب</span>
+            </a>
+        </nav>
+
+        {{-- student realtime payload, booking result, booking button and join-prompt modal
+             moved outside the layout branch so they are available on all routes
+             (including mobile / live-room routes) --}}
+    @endif
 
     @if($currentStudent)
         <div
@@ -64,15 +97,19 @@
             data-poll-url="{{ route('student.sessions.poll') }}"
         ></div>
 
-        <button type="button" class="student-floating-booking-btn" data-bs-toggle="modal" data-bs-target="#studentBookingModal">
-            <i class="fas fa-plus"></i>
-            <span>حجز جلسة</span>
-        </button>
+        @if(session('studentBookingPopup'))
+            <div class="d-none" data-booking-result data-booking-payload='@json(session('studentBookingPopup'))'></div>
+        @endif
 
-        @include('student.partials.booking-modal')
-    @endif
+        @unless($studentActiveSessionPayload)
+            <button type="button" class="student-floating-booking-btn" data-bs-toggle="modal" data-bs-target="#studentBookingModal">
+                <i class="fas fa-plus"></i>
+                <span>حجز جلسة</span>
+            </button>
 
-    @if($currentStudent && ! request()->routeIs('student.sessions.room.*'))
+            @include('student.partials.booking-modal')
+        @endunless
+
         <div
             class="modal fade"
             id="studentJoinSessionPrompt"
@@ -89,9 +126,15 @@
                     <div class="modal-body pt-3">
                         <p class="mb-2 fw-semibold" data-join-session-summary>{{ $studentActiveSessionPayload['subject_name'] ?? 'جلسة' }} مع {{ $studentActiveSessionPayload['participant_name'] ?? 'الأستاذ' }}</p>
                         <p class="text-muted mb-4" data-join-session-time>{{ $studentActiveSessionPayload['scheduled_at_label'] ?? '' }}</p>
-                        <div class="d-flex justify-content-end gap-2">
+                        <div class="d-flex flex-column flex-sm-row justify-content-end gap-2">
                             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إغلاق</button>
                             <a href="{{ $studentActiveSessionPayload['join_url'] ?? '#' }}" class="btn btn-primary" data-join-session-link>الانضمام للجلسة</a>
+                            @if($studentActiveSessionPayload && $studentActiveSessionPayload['id'])
+                                <form action="{{ route('student.sessions.cancel', $studentActiveSessionPayload['id']) }}" method="POST" class="m-0">
+                                    @csrf
+                                    <button type="submit" class="btn btn-outline-danger">إلغاء الجلسة</button>
+                                </form>
+                            @endif
                         </div>
                     </div>
                 </div>
