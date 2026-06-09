@@ -1,4 +1,6 @@
-﻿<?php\n\nnamespace App\Http\Controllers\Student;
+﻿<?php
+
+namespace App\Http\Controllers\Student;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Student\CancelStudentSessionRequest;
