@@ -1,4 +1,6 @@
-﻿<?php\r\n\r\nnamespace App\Http\Controllers\Teacher;
+﻿<?php
+
+namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeacherSession;

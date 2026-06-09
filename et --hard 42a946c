@@ -1,0 +1,12 @@
+[33mc21980f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: commit (merge): 9-6
+[33ma004161[m HEAD@{1}: commit: 9-6
+[33m42a946c[m HEAD@{2}: commit: new
+[33mde8790b[m HEAD@{3}: commit: new push2
+[33m45b98d9[m HEAD@{4}: commit: new push1
+[33m9a4f8b1[m HEAD@{5}: commit (merge): new push
+[33mc2fcf75[m HEAD@{6}: commit: new push
+[33m270b22a[m HEAD@{7}: checkout: moving from main to main
+[33m270b22a[m HEAD@{8}: commit: first
+[33mac5a1a1[m HEAD@{9}: Branch: renamed refs/heads/main to refs/heads/main
+[33mac5a1a1[m HEAD@{11}: Branch: renamed refs/heads/master to refs/heads/main
+[33mac5a1a1[m HEAD@{13}: commit (initial): first commit
