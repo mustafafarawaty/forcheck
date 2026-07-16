@@ -33,6 +33,7 @@ class WalletService
 
         return DB::transaction(function () use ($student, $amount, $proof): WalletTransaction {
             $path = $proof->store("wallet/students/{$student->id}/deposits", 'public');
+
             return WalletTransaction::query()->create([
                 'student_id' => $student->id,
                 'type' => 'deposit',
@@ -53,6 +54,7 @@ class WalletService
             $student->decrement('balance', $amount);
 
             $path = $proof->store("wallet/students/{$student->id}/withdrawals", 'public');
+
             return WalletTransaction::query()->create([
                 'student_id' => $student->id,
                 'type' => 'withdrawal',
@@ -73,6 +75,7 @@ class WalletService
             $teacher->decrement('balance', $amount);
 
             $path = $proof->store("wallet/teachers/{$teacher->id}/withdrawals", 'public');
+
             return WalletTransaction::query()->create([
                 'teacher_id' => $teacher->id,
                 'type' => 'withdrawal',
@@ -292,13 +295,11 @@ class WalletService
             WalletTransaction::query()->updateOrCreate(
                 [
                     'student_id' => $session->student_id,
-                    'teacher_id' => $session->teacher_id,
                     'teacher_session_id' => $session->id,
                     'type' => 'session_charge',
                 ],
                 [
                     'student_id' => $session->student_id,
-                    'teacher_id' => $session->teacher_id,
                     'direction' => 'debit',
                     'status' => 'completed',
                     'amount' => $grossAmount,
@@ -314,13 +315,11 @@ class WalletService
             WalletTransaction::query()->updateOrCreate(
                 [
                     'teacher_id' => $session->teacher_id,
-                    'student_id' => $session->student_id,
                     'teacher_session_id' => $session->id,
                     'type' => 'session_earning',
                 ],
                 [
                     'teacher_id' => $session->teacher_id,
-                    'student_id' => $session->student_id,
                     'direction' => 'credit',
                     'status' => 'completed',
                     'amount' => $teacherEarning,
@@ -426,6 +425,155 @@ class WalletService
                 'settled_at' => null,
                 'disputed_at' => null,
                 'cancellation_reason' => $reason,
+            ]);
+
+            return $session->fresh(['student', 'teacher', 'subject']);
+        });
+    }
+
+    /**
+     * Settle a cancelled in-progress session on a pro-rata basis.
+     *
+     * The teacher earns a share proportional to elapsed time, minus admin commission.
+     * If the teacher initiated the cancellation, their share is further reduced by 1.5×.
+     * The student receives the remainder.
+     */
+    public function proRataSettleSession(TeacherSession $session, string $cancelledBy): TeacherSession
+    {
+        return DB::transaction(function () use ($session, $cancelledBy): TeacherSession {
+            $session = TeacherSession::query()
+                ->with(['student', 'teacher'])
+                ->lockForUpdate()
+                ->findOrFail($session->id);
+
+            if (in_array($session->payment_status, ['settled', 'refunded'], true)) {
+                return $session;
+            }
+
+            if (! $session->teacher) {
+                return $session;
+            }
+
+            if ($session->payment_status !== 'held') {
+                $session = $this->holdSessionAmount($session);
+                $session = TeacherSession::query()->with(['student', 'teacher'])->lockForUpdate()->findOrFail($session->id);
+            }
+
+            $grossAmount = (float) $session->price;
+
+            if ($grossAmount <= 0) {
+                $session->update([
+                    'payment_status' => 'settled',
+                    'settled_at' => now(),
+                ]);
+
+                return $session->fresh(['student', 'teacher', 'subject']);
+            }
+
+            $elapsedMinutes = max(1, (int) now()->diffInSeconds($session->started_at) / 60);
+            $plannedMinutes = max(1, (int) $session->plannedEndAt()->diffInSeconds($session->started_at) / 60);
+            $ratePerMinute = $grossAmount / $plannedMinutes;
+            $earnedAmount = round($ratePerMinute * $elapsedMinutes, 2);
+
+            $adminCommissionPct = (float) $session->admin_commission_percentage;
+            $adminCommission = round($earnedAmount * ($adminCommissionPct / 100), 2);
+            $teacherNet = round($earnedAmount - $adminCommission, 2);
+
+            if ($cancelledBy === 'teacher') {
+                $teacherPayout = round($teacherNet / 1.5, 2);
+            } else {
+                $teacherPayout = $teacherNet;
+            }
+
+            $studentRefund = round($grossAmount - $teacherPayout, 2);
+
+            if ($session->student && $studentRefund > 0) {
+                $session->student->increment('balance', $studentRefund);
+            }
+
+            if ($session->teacher && $teacherPayout > 0) {
+                $session->teacher->increment('balance', $teacherPayout);
+            }
+
+            WalletTransaction::query()->updateOrCreate(
+                [
+                    'student_id' => $session->student_id,
+                    'teacher_session_id' => $session->id,
+                    'type' => 'session_charge',
+                ],
+                [
+                    'student_id' => $session->student_id,
+                    'direction' => 'debit',
+                    'status' => 'completed',
+                    'amount' => $earnedAmount,
+                    'description' => 'تم خصم الجزء المستحق من قيمة الجلسة بعد الإلغاء الجزئي.',
+                    'meta' => [
+                        'admin_commission_percentage' => $adminCommissionPct,
+                        'admin_commission_amount' => $adminCommission,
+                        'teacher_earning_amount' => $teacherPayout,
+                        'elapsed_minutes' => $elapsedMinutes,
+                        'planned_minutes' => $plannedMinutes,
+                        'cancelled_by' => $cancelledBy,
+                    ],
+                ]
+            );
+
+            WalletTransaction::query()->updateOrCreate(
+                [
+                    'teacher_id' => $session->teacher_id,
+                    'teacher_session_id' => $session->id,
+                    'type' => 'session_earning',
+                ],
+                [
+                    'teacher_id' => $session->teacher_id,
+                    'direction' => 'credit',
+                    'status' => 'completed',
+                    'amount' => $teacherPayout,
+                    'description' => $cancelledBy === 'teacher'
+                        ? 'ربح الجلسة بعد الخصم الجزئي وعقوبة الإلغاء من قبل الأستاذ.'
+                        : 'ربح الجلسة بعد الخصم الجزئي.',
+                    'meta' => [
+                        'gross_amount' => $grossAmount,
+                        'admin_commission_percentage' => $adminCommissionPct,
+                        'admin_commission_amount' => $adminCommission,
+                        'elapsed_minutes' => $elapsedMinutes,
+                        'planned_minutes' => $plannedMinutes,
+                        'cancelled_by' => $cancelledBy,
+                    ],
+                ]
+            );
+
+            if ($studentRefund > 0) {
+                WalletTransaction::query()->updateOrCreate(
+                    [
+                        'student_id' => $session->student_id,
+                        'teacher_session_id' => $session->id,
+                        'type' => 'session_refund',
+                    ],
+                    [
+                        'student_id' => $session->student_id,
+                        'direction' => 'credit',
+                        'status' => 'completed',
+                        'amount' => $studentRefund,
+                        'description' => 'استرجاع المبلغ المتبقي بعد إلغاء الجلسة.',
+                        'meta' => [
+                            'elapsed_minutes' => $elapsedMinutes,
+                            'planned_minutes' => $plannedMinutes,
+                            'cancelled_by' => $cancelledBy,
+                        ],
+                    ]
+                );
+            }
+
+            WalletTransaction::query()
+                ->where('teacher_session_id', $session->id)
+                ->whereIn('type', ['session_hold', 'session_pending'])
+                ->delete();
+
+            $session->update([
+                'payment_status' => 'settled',
+                'settled_at' => now(),
+                'disputed_at' => null,
             ]);
 
             return $session->fresh(['student', 'teacher', 'subject']);
