@@ -470,8 +470,8 @@ class WalletService
                 return $session->fresh(['student', 'teacher', 'subject']);
             }
 
-            $elapsedMinutes = max(1, (int) now()->diffInSeconds($session->started_at) / 60);
-            $plannedMinutes = max(1, (int) $session->plannedEndAt()->diffInSeconds($session->started_at) / 60);
+            $elapsedMinutes = max(1, (int) abs(now()->diffInSeconds($session->started_at)) / 60);
+            $plannedMinutes = max(1, (int) abs($session->plannedEndAt()->diffInSeconds($session->started_at)) / 60);
             $ratePerMinute = $grossAmount / $plannedMinutes;
             $earnedAmount = round($ratePerMinute * $elapsedMinutes, 2);
 
